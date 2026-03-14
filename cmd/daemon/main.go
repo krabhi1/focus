@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
-	"go-basic/pkg/protocol"
-	"go-basic/pkg/sys"
+	"go-basic/internal/protocol"
+	"go-basic/internal/sys"
 	"net"
 	"os"
 	"os/signal"

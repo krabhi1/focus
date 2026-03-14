@@ -4,7 +4,7 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	"go-basic/pkg/protocol"
+	"go-basic/internal/protocol"
 	"net"
 	"os"
 )
@@ -58,7 +58,7 @@ func main() {
 		fmt.Println("Response:", res)
 	case "stop":
 	case "status":
-		req:= protocol.Request{
+		req := protocol.Request{
 			Command: "status",
 		}
 		res, err := SendRequest(conn, req)
