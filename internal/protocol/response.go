@@ -1,12 +1,11 @@
 package protocol
 
-
 import (
 	"encoding/gob"
 )
 
 type Response struct {
-	Type string
+	Type    string
 	Payload any
 }
 type SuccessResponse struct {
