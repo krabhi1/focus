@@ -1,10 +1,10 @@
 package main
 
 import (
-	"context"
 	"encoding/gob"
 	"fmt"
 	"go-basic/pkg/protocol"
+	"go-basic/pkg/sys"
 	"net"
 	"os"
 	"os/signal"
@@ -110,13 +110,23 @@ func handleStart(req protocol.StartRequest) protocol.Response {
 		StartTime:  time.Now(),
 		ExpireTime: time.Now().Add(req.Duration),
 	}
-	ctx, _ := context.WithDeadline(context.Background(), CurrentTask.ExpireTime)
-
-	go func() {
-		<-ctx.Done()
+	//create a timer before 10 seconds of expire time to notify user
+	beforeExpire := time.Until(CurrentTask.ExpireTime.Add(-10 * time.Second))
+	if beforeExpire > 0 {
+		time.AfterFunc(beforeExpire, func() {
+			sys.Notify("Task expiring soon", fmt.Sprintf("'%s' will expire in 10 seconds", CurrentTask.Title))
+			time.Sleep(2 * time.Second)
+			sys.PlaySound("assets/task-ending.mp3")
+		})
+	}
+	time.AfterFunc(req.Duration, func() {
 		fmt.Printf("Task expired: %+v\n", CurrentTask)
+		sys.Notify("Task expired", fmt.Sprintf("'%s' has expired. Screen is going to Lock", CurrentTask.Title))
+		time.Sleep(5 * time.Second) // Give user some time to see the notification before locking
+		sys.LockScreen()
 		CurrentTask = nil
-	}()
+	})
+
 	fmt.Printf("Started task: %+v\n", CurrentTask)
 	return protocol.Response{
 		Type: "success",
