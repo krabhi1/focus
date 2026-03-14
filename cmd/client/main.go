@@ -58,6 +58,15 @@ func main() {
 		fmt.Println("Response:", res)
 	case "stop":
 	case "status":
+		req:= protocol.Request{
+			Command: "status",
+		}
+		res, err := SendRequest(conn, req)
+		if err != nil {
+			fmt.Println("Error sending request:", err)
+			return
+		}
+		fmt.Println("Response:", res)
 	default:
 		fmt.Println("Invalid command")
 	}
