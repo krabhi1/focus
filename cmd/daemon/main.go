@@ -122,12 +122,12 @@ func logHelperErrors(errCh <-chan error) {
 }
 
 func handleStart(req protocol.StartRequest) protocol.Response {
-	if state.Global.CurrentTask != nil {
-		fmt.Printf("A task is already running: %+v\n", state.Global.CurrentTask)
+	if currentTitle, ok := state.Global.CurrentTaskTitle(); ok {
+		fmt.Printf("A task is already running: %s\n", currentTitle)
 		return protocol.Response{
 			Type: "error",
 			Payload: protocol.ErrorResponse{
-				Message: fmt.Sprintf("A task is already running: %s", state.Global.CurrentTask.Title),
+				Message: fmt.Sprintf("A task is already running: %s", currentTitle),
 			},
 		}
 	}
@@ -150,7 +150,8 @@ func handleStatus() protocol.Response {
 }
 
 func handleStop() protocol.Response {
-	if state.Global.CurrentTask == nil {
+	currentTitle, ok := state.Global.CurrentTaskTitle()
+	if !ok {
 		return protocol.Response{
 			Type: "success",
 			Payload: protocol.SuccessResponse{
@@ -158,11 +159,11 @@ func handleStop() protocol.Response {
 			},
 		}
 	}
-	defer state.Global.StopCurrentTask()
+	state.Global.StopCurrentTask()
 	return protocol.Response{
 		Type: "success",
 		Payload: protocol.SuccessResponse{
-			Message: fmt.Sprintf("Stopped the task: %s", state.Global.CurrentTask.Title),
+			Message: fmt.Sprintf("Stopped the task: %s", currentTitle),
 		},
 	}
 }
