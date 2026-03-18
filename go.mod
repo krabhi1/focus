@@ -1,3 +1,3 @@
-module go-basic
+module focus
 
 go 1.25.7

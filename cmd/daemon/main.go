@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/gob"
 	"fmt"
-	"go-basic/internal/protocol"
-	"go-basic/internal/state"
+	"focus/internal/events"
+	"focus/internal/protocol"
+	"focus/internal/state"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -20,16 +23,31 @@ type Task struct {
 }
 
 const socketPath = "/tmp/focus.sock"
+const (
+	idleThresholdSeconds = 300
+	idlePollSeconds      = 1
+)
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Cleanup socket on exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
+		cancel()
 		os.Remove(socketPath)
 		os.Exit(0)
 	}()
+
+	listener, err := events.Start(ctx, idleThresholdSeconds, idlePollSeconds)
+	if err != nil {
+		log.Printf("focus-events startup failed: %v", err)
+	} else {
+		go consumeHelperEvents(listener.Events)
+		go logHelperErrors(listener.Errors)
+	}
 
 	// Remove old socket if it exists
 	os.Remove(socketPath)
@@ -63,34 +81,24 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 	fmt.Printf("Received ==> %+v\n", req)
+	var res protocol.Response
 	switch req.Command {
 	case "start":
-		res := handleStart(req.Payload.(protocol.StartRequest))
-		err = gob.NewEncoder(conn).Encode(res)
-		if err != nil {
-			fmt.Printf("Encode error: %v\n", err)
-		}
+		res = handleStart(req.Payload.(protocol.StartRequest))
 	case "status":
-		res := handleStatus()
-		err = gob.NewEncoder(conn).Encode(res)
-		if err != nil {
-			fmt.Printf("Encode error: %v\n", err)
-		}
+		res = handleStatus()
 	case "stop":
-		res := handleStop()
-		err = gob.NewEncoder(conn).Encode(res)
-		if err != nil {
-			fmt.Printf("Encode error: %v\n", err)
-		}
+		res = handleStop()
 	default:
 		fmt.Printf("Unknown command: %s\n", req.Command)
+		res = protocol.Response{
+			Type: "error",
+			Payload: protocol.ErrorResponse{
+				Message: fmt.Sprintf("Unknown command: %s", req.Command),
+			},
+		}
 	}
 
-	//send response
-	res := protocol.Response{
-		Type:    "success",
-		Payload: fmt.Sprintf("Received command: %s", req.Command),
-	}
 	err = gob.NewEncoder(conn).Encode(res)
 	if err != nil {
 		fmt.Printf("Encode error: %v\n", err)
@@ -98,6 +106,21 @@ func handleConnection(conn net.Conn) {
 	}
 
 }
+
+func consumeHelperEvents(eventCh <-chan events.Event) {
+	for event := range eventCh {
+		log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
+	}
+}
+
+func logHelperErrors(errCh <-chan error) {
+	for err := range errCh {
+		if err != nil {
+			log.Printf("focus-events error: %v", err)
+		}
+	}
+}
+
 func handleStart(req protocol.StartRequest) protocol.Response {
 	if state.Global.CurrentTask != nil {
 		fmt.Printf("A task is already running: %+v\n", state.Global.CurrentTask)

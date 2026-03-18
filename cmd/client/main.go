@@ -4,7 +4,7 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	"go-basic/internal/protocol"
+	"focus/internal/protocol"
 	"net"
 	"os"
 )

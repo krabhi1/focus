@@ -12,6 +12,13 @@ func LockScreen() {
 		fmt.Printf("Error locking screen: %v\n", err)
 	}
 }
+func UnlockScreen() {
+	cmd := exec.Command("cinnamon-screensaver-command", "-d")
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Error unlocking screen: %v\n", err)
+	}
+}
 
 func PlaySound(path string) {
 	cmd := exec.Command("paplay", path)

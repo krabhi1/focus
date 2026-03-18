@@ -1,6 +1,9 @@
 BINARY_NAME=focus
 DAEMON_NAME=focusd
+EVENTS_NAME=focus-events
 DIST_DIR=dist
+NATIVE_SRC=native/session_event_listener.c
+NATIVE_FLAGS=$(shell pkg-config --cflags --libs gio-2.0 glib-2.0 x11 xscrnsaver)
 
 .PHONY: all build clean test
 
@@ -9,9 +12,11 @@ all: clean build
 
 # Build the binary
 build:
-	@echo "Building $(BINARY_NAME) and $(DAEMON_NAME)..."
+	@echo "Building $(BINARY_NAME), $(DAEMON_NAME), and $(EVENTS_NAME)..."
+	@mkdir -p $(DIST_DIR)
 	@go build -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/client
 	@go build -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/daemon
+	@gcc -Wall -Wextra -O2 $(NATIVE_SRC) -o $(DIST_DIR)/$(EVENTS_NAME) $(NATIVE_FLAGS)
 
 clean:
 	@echo "Cleaning $(DIST_DIR) directory..."
