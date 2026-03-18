@@ -5,7 +5,7 @@ DIST_DIR=dist
 NATIVE_SRC=native/session_event_listener.c
 NATIVE_FLAGS=$(shell pkg-config --cflags --libs gio-2.0 glib-2.0 x11 xscrnsaver)
 
-.PHONY: all build clean test
+.PHONY: all build clean test fmt
 
 # Default target
 all: clean build
@@ -26,3 +26,8 @@ clean:
 test:
 	@echo "Running tests..."
 	@go test ./...
+
+fmt:
+	@echo "Formatting files..."
+	@go fmt ./...
+	@clang-format -i $(NATIVE_SRC)

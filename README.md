@@ -1,17 +1,21 @@
 # Focus
 
-This is a productivity tool that helps you stay focused and manage your time effectively while using the computer.
-Goal is you must know know what you are doing on computer and not just randomly browsing or using it without any purpose.
-It use a daemon (focusd) and client cli (focus) architecture. The daemon runs in the background and manages the tasks and time tracking, while the client cli provides a user interface for interacting with the daemon.
+Focus is a productivity tool designed to keep your computer usage intentional. It helps you stay on track and manage your time effectively, ensuring every session at your desk has a clear purpose rather than drifting into aimless browsing.
 
-### Rules
+The system operates via a background daemon (`focusd`) that handles time tracking, while a simple CLI (`focus`) provides the interface for managing your work.
 
-- You can not use computer more 5min without active Task. It will show a warning notification and lock screen or sleep after 5min of warning.
-- Only 1 Task can be active at a time. Lock the screen or sleep after 5min of task completion.
-- You can start a new task without taking a break. [Task,Break, Task, Break, ... ]
-- Task can light or deep work. Light work is for tasks that require less focus and can be done while doing other things, while deep work is for tasks that require more focus and should be done without distractions. So after light lask lock screen and after deep task do sleep .
-- Task will be paused/resume based on user activity like keyboard/mouse screen lock/unlock sleep/awake. So you don't have to worry about pausing or resuming tasks manually.
-- Deep work is usually 90min long and light work is usually 25min long.
-- light work need 5min break and deep work need 15min break. So after light task you can take 5min break and after deep task you can take 15min break. You can also take longer breaks if needed. This is just the constrain to start new task. You can take longer breaks if needed but you can't start new task until the break time is over.
-- system will notify you 5min before the task is completed. So you can wrap up your work and prepare for the next task or break.
-- on deep work in middle around 45min it will notify you to take a short break. So you can stretch, walk around, or do something else to refresh your mind before continuing with the task. logic is deep-work [45m(notify time to break, play sound, lock screen after 1min),lock(5min break)]
+## Rules
+
+- **Intentional Use:** Focus gives you a 5-minute grace period to use your computer without an active task. Beyond that, the system will warn you before locking the screen or putting the computer to sleep.
+- **One Thing at a Time:** Only one task can be active at once. When you finish a task, you have 5 minutes to start your next session before the system locks or sleeps.
+- **Work Modes:**
+  - **Light Work (25 min):** For routine tasks that allow for multitasking. Requires a 5-minute break and concludes with a screen lock.
+  - **Deep Work (90 min):** For high-concentration sessions without distractions. Requires a 15-minute break and concludes with the system sleeping.
+- **Mandatory Breaks:** To prevent burnout, you cannot start a new task until your mandatory break is finished. You are welcome to take a longer break if needed, but the system ensures you get the minimum rest required.
+- **Automatic Tracking:** There is no need for manual toggling. Focus monitors your keyboard, mouse, and screen activity to automatically pause and resume tasks whenever you step away.
+- **Heads-up Notifications:** You’ll receive a notification 5 minutes before a task ends, giving you time to wrap up your work gracefully.
+- **Deep Work Intermission:** To keep your mind fresh, deep work includes a short reset at the 45-minute mark. Focus will notify you and play a sound; one minute later, it locks the screen for 5 minutes so you can stretch and recharge.
+
+## System Requirements
+
+For now this is only available in Linux and tested with cinnamon desktop environment. It should work in other environments as well, but I haven't tested it yet.
