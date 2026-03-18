@@ -26,6 +26,7 @@ func Start(ctx context.Context, idleThresholdSeconds, idlePollSeconds int) (*Lis
 	cmd := exec.CommandContext(
 		ctx,
 		helperPath,
+		"--format=binary",
 		fmt.Sprintf("%d", idleThresholdSeconds),
 		fmt.Sprintf("%d", idlePollSeconds),
 	)
@@ -47,7 +48,7 @@ func Start(ctx context.Context, idleThresholdSeconds, idlePollSeconds int) (*Lis
 		return nil, fmt.Errorf("start helper: %w", err)
 	}
 
-	go scanStdout(stdout, eventCh, errCh)
+	go scanBinaryStdout(stdout, eventCh, errCh)
 	go logStderr(stderr)
 	go waitForExit(cmd, errCh)
 
@@ -58,22 +59,27 @@ func Start(ctx context.Context, idleThresholdSeconds, idlePollSeconds int) (*Lis
 	}, nil
 }
 
-func scanStdout(stdout io.ReadCloser, eventCh chan<- Event, errCh chan<- error) {
+func scanBinaryStdout(stdout io.ReadCloser, eventCh chan<- Event, errCh chan<- error) {
 	defer close(eventCh)
 
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
-		event, err := Parse(line)
+	frame := make([]byte, wireSize)
+	for {
+		_, err := io.ReadFull(stdout, frame)
+		if err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return
+			}
+			errCh <- fmt.Errorf("read helper stdout: %w", err)
+			return
+		}
+
+		event, err := ParseBinaryFrame(frame)
 		if err != nil {
 			errCh <- err
 			continue
 		}
-		eventCh <- event
-	}
 
-	if err := scanner.Err(); err != nil {
-		errCh <- fmt.Errorf("read helper stdout: %w", err)
+		eventCh <- event
 	}
 }
 

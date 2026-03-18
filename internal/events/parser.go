@@ -1,48 +1,96 @@
 package events
 
 import (
+	"encoding/binary"
 	"fmt"
-	"regexp"
 	"strconv"
 	"time"
 )
 
-var fieldPattern = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)=(".*?"|[^ ]+)`)
-
-func Parse(line string) (Event, error) {
-	fields := make(map[string]string)
-	matches := fieldPattern.FindAllStringSubmatch(line, -1)
-	if len(matches) == 0 {
-		return Event{}, fmt.Errorf("invalid event line: %q", line)
+func ParseBinaryFrame(frame []byte) (Event, error) {
+	if len(frame) != wireSize {
+		return Event{}, fmt.Errorf("invalid frame size: %d", len(frame))
+	}
+	if frame[0] != wireMagic0 || frame[1] != wireMagic1 || frame[2] != wireMagic2 {
+		return Event{}, fmt.Errorf("invalid frame magic")
+	}
+	if frame[3] != wireVersion {
+		return Event{}, fmt.Errorf("unsupported frame version: %d", frame[3])
+	}
+	if binary.LittleEndian.Uint16(frame[6:8]) != wireSize {
+		return Event{}, fmt.Errorf("unexpected frame length: %d", binary.LittleEndian.Uint16(frame[6:8]))
 	}
 
-	for _, match := range matches {
-		key := match[1]
-		value := match[2]
-		if unquoted, err := strconv.Unquote(value); err == nil {
-			value = unquoted
-		}
-		fields[key] = value
+	fields := map[string]string{}
+	kind, err := parseWireKind(frame[4])
+	if err != nil {
+		return Event{}, err
+	}
+	state, err := parseWireState(frame[5])
+	if err != nil {
+		return Event{}, err
 	}
 
-	eventName, ok := fields["event"]
-	if !ok {
-		return Event{}, fmt.Errorf("missing event field: %q", line)
+	unixMillis := binary.LittleEndian.Uint64(frame[8:16])
+	ts := time.UnixMilli(int64(unixMillis))
+	fields["event"] = string(kind)
+	if state != "" {
+		fields["state"] = state
 	}
 
-	var ts time.Time
-	if rawTS, ok := fields["ts"]; ok {
-		parsed, err := time.ParseInLocation("2006-01-02 15:04:05", rawTS, time.Local)
-		if err != nil {
-			return Event{}, fmt.Errorf("invalid timestamp %q: %w", rawTS, err)
-		}
-		ts = parsed
+	idleThreshold := binary.LittleEndian.Uint32(frame[16:20])
+	idlePoll := binary.LittleEndian.Uint32(frame[20:24])
+	if kind == KindListener {
+		fields["idle_threshold"] = strconv.FormatUint(uint64(idleThreshold), 10)
+		fields["idle_poll"] = strconv.FormatUint(uint64(idlePoll), 10)
 	}
 
 	return Event{
 		Timestamp: ts,
-		Kind:      Kind(eventName),
-		State:     fields["state"],
+		Kind:      kind,
+		State:     state,
 		Fields:    fields,
 	}, nil
+}
+
+func parseWireKind(raw byte) (Kind, error) {
+	switch raw {
+	case wireKindListener:
+		return KindListener, nil
+	case wireKindIdle:
+		return KindIdle, nil
+	case wireKindScreen:
+		return KindScreen, nil
+	case wireKindSleep:
+		return KindSleep, nil
+	case wireKindShutdown:
+		return KindShutdown, nil
+	default:
+		return "", fmt.Errorf("unknown wire kind: %d", raw)
+	}
+}
+
+func parseWireState(raw byte) (string, error) {
+	switch raw {
+	case wireStateNone:
+		return "", nil
+	case wireStateReady:
+		return "ready", nil
+	case wireStateEntered:
+		return "entered", nil
+	case wireStateExited:
+		return "exited", nil
+	case wireStateLocked:
+		return "locked", nil
+	case wireStateUnlocked:
+		return "unlocked", nil
+	case wireStatePrepare:
+		return "prepare", nil
+	case wireStateResume:
+		return "resume", nil
+	case wireStateCancelled:
+		return "cancelled", nil
+	default:
+		return "", fmt.Errorf("unknown wire state: %d", raw)
+	}
 }
