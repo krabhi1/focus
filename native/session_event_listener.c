@@ -1,27 +1,32 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/scrnsaver.h>
-#include <gio/gio.h>
+#include <errno.h>
+#include <poll.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <systemd/sd-bus.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef struct {
-  GMainLoop *loop;
-  GDBusConnection *system_bus;
-  GDBusConnection *session_bus;
+  sd_bus *system_bus;
+  sd_bus *session_bus;
   Display *display;
-  guint sleep_sub_id;
-  guint shutdown_sub_id;
-  guint lock_sub_id;
-  guint idle_timer_id;
   unsigned int idle_threshold_seconds;
   unsigned int idle_poll_seconds;
   bool is_idle;
 } AppState;
 
 static void print_event(const char *event, const char *state) {
-  GDateTime *now = g_date_time_new_now_local();
-  gchar *stamp = g_date_time_format(now, "%Y-%m-%d %H:%M:%S");
+  char stamp[32];
+  time_t now = time(NULL);
+  struct tm tm_now;
+
+  localtime_r(&now, &tm_now);
+  strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &tm_now);
 
   printf("ts=\"%s\" event=%s", stamp, event);
   if (state != NULL) {
@@ -29,9 +34,13 @@ static void print_event(const char *event, const char *state) {
   }
   putchar('\n');
   fflush(stdout);
+}
 
-  g_free(stamp);
-  g_date_time_unref(now);
+static uint64_t monotonic_milliseconds(void) {
+  struct timespec ts;
+
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 
 static unsigned long get_idle_milliseconds(Display *display) {
@@ -54,13 +63,10 @@ static unsigned long get_idle_milliseconds(Display *display) {
   return idle_ms;
 }
 
-static gboolean poll_idle_state(gpointer user_data) {
-  AppState *app = user_data;
-  unsigned long idle_ms;
-  bool now_idle;
-
-  idle_ms = get_idle_milliseconds(app->display);
-  now_idle = idle_ms >= (unsigned long)app->idle_threshold_seconds * 1000UL;
+static void poll_idle_state(AppState *app) {
+  unsigned long idle_ms = get_idle_milliseconds(app->display);
+  bool now_idle =
+      idle_ms >= (unsigned long)app->idle_threshold_seconds * 1000UL;
 
   if (now_idle && !app->is_idle) {
     print_event("idle", "entered");
@@ -69,77 +75,116 @@ static gboolean poll_idle_state(gpointer user_data) {
     print_event("idle", "exited");
     app->is_idle = false;
   }
-
-  return G_SOURCE_CONTINUE;
 }
 
-static void on_sleep_signal(GDBusConnection *connection,
-                            const gchar *sender_name, const gchar *object_path,
-                            const gchar *interface_name,
-                            const gchar *signal_name, GVariant *parameters,
-                            gpointer user_data) {
-  gboolean sleeping = FALSE;
+static int on_sleep_signal(sd_bus_message *message, void *userdata,
+                           sd_bus_error *ret_error) {
+  int sleeping = 0;
 
-  (void)connection;
-  (void)sender_name;
-  (void)object_path;
-  (void)interface_name;
-  (void)signal_name;
-  (void)user_data;
+  (void)userdata;
+  (void)ret_error;
 
-  g_variant_get(parameters, "(b)", &sleeping);
+  if (sd_bus_message_read(message, "b", &sleeping) < 0) {
+    fprintf(stderr, "failed to read PrepareForSleep payload\n");
+    return 0;
+  }
+
   print_event("sleep", sleeping ? "prepare" : "resume");
+  return 0;
 }
 
-static void on_shutdown_signal(GDBusConnection *connection,
-                               const gchar *sender_name,
-                               const gchar *object_path,
-                               const gchar *interface_name,
-                               const gchar *signal_name, GVariant *parameters,
-                               gpointer user_data) {
-  gboolean shutting_down = FALSE;
+static int on_shutdown_signal(sd_bus_message *message, void *userdata,
+                              sd_bus_error *ret_error) {
+  int shutting_down = 0;
 
-  (void)connection;
-  (void)sender_name;
-  (void)object_path;
-  (void)interface_name;
-  (void)signal_name;
-  (void)user_data;
+  (void)userdata;
+  (void)ret_error;
 
-  g_variant_get(parameters, "(b)", &shutting_down);
+  if (sd_bus_message_read(message, "b", &shutting_down) < 0) {
+    fprintf(stderr, "failed to read PrepareForShutdown payload\n");
+    return 0;
+  }
+
   print_event("shutdown", shutting_down ? "prepare" : "cancelled");
+  return 0;
 }
 
-static void on_lock_signal(GDBusConnection *connection,
-                           const gchar *sender_name, const gchar *object_path,
-                           const gchar *interface_name,
-                           const gchar *signal_name, GVariant *parameters,
-                           gpointer user_data) {
-  gboolean active = FALSE;
+static int on_lock_signal(sd_bus_message *message, void *userdata,
+                          sd_bus_error *ret_error) {
+  int active = 0;
 
-  (void)connection;
-  (void)sender_name;
-  (void)object_path;
-  (void)interface_name;
-  (void)signal_name;
-  (void)user_data;
+  (void)userdata;
+  (void)ret_error;
 
-  g_variant_get(parameters, "(b)", &active);
+  if (sd_bus_message_read(message, "b", &active) < 0) {
+    fprintf(stderr, "failed to read ActiveChanged payload\n");
+    return 0;
+  }
+
   print_event("screen", active ? "locked" : "unlocked");
+  return 0;
 }
 
-static gboolean connect_buses(AppState *app, GError **error) {
-  app->system_bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, error);
-  if (app->system_bus == NULL) {
-    return FALSE;
+static int process_bus(sd_bus *bus) {
+  int r;
+
+  while ((r = sd_bus_process(bus, NULL)) > 0) {
   }
 
-  app->session_bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, error);
-  if (app->session_bus == NULL) {
-    return FALSE;
+  return r;
+}
+
+static int connect_buses(AppState *app) {
+  int r;
+
+  r = sd_bus_open_system(&app->system_bus);
+  if (r < 0) {
+    fprintf(stderr, "failed to connect to system bus: %s\n", strerror(-r));
+    return r;
   }
 
-  return TRUE;
+  r = sd_bus_open_user(&app->session_bus);
+  if (r < 0) {
+    fprintf(stderr, "failed to connect to session bus: %s\n", strerror(-r));
+    return r;
+  }
+
+  r = sd_bus_add_match(
+      app->system_bus, NULL,
+      "type='signal',sender='org.freedesktop.login1',"
+      "interface='org.freedesktop.login1.Manager',"
+      "member='PrepareForSleep',path='/org/freedesktop/login1'",
+      on_sleep_signal, app);
+  if (r < 0) {
+    fprintf(stderr, "failed to subscribe to PrepareForSleep: %s\n",
+            strerror(-r));
+    return r;
+  }
+
+  r = sd_bus_add_match(
+      app->system_bus, NULL,
+      "type='signal',sender='org.freedesktop.login1',"
+      "interface='org.freedesktop.login1.Manager',"
+      "member='PrepareForShutdown',path='/org/freedesktop/login1'",
+      on_shutdown_signal, app);
+  if (r < 0) {
+    fprintf(stderr, "failed to subscribe to PrepareForShutdown: %s\n",
+            strerror(-r));
+    return r;
+  }
+
+  r = sd_bus_add_match(
+      app->session_bus, NULL,
+      "type='signal',sender='org.cinnamon.ScreenSaver',"
+      "interface='org.cinnamon.ScreenSaver',member='ActiveChanged',"
+      "path='/org/cinnamon/ScreenSaver'",
+      on_lock_signal, app);
+  if (r < 0) {
+    fprintf(stderr, "failed to subscribe to ActiveChanged: %s\n", strerror(-r));
+    return r;
+  }
+
+  return 0;
 }
 
 static bool connect_display(AppState *app) {
@@ -153,48 +198,6 @@ static bool connect_display(AppState *app) {
   return true;
 }
 
-static void subscribe_signals(AppState *app) {
-  app->sleep_sub_id = g_dbus_connection_signal_subscribe(
-      app->system_bus, "org.freedesktop.login1",
-      "org.freedesktop.login1.Manager", "PrepareForSleep",
-      "/org/freedesktop/login1", NULL, G_DBUS_SIGNAL_FLAGS_NONE,
-      on_sleep_signal, NULL, NULL);
-
-  app->shutdown_sub_id = g_dbus_connection_signal_subscribe(
-      app->system_bus, "org.freedesktop.login1",
-      "org.freedesktop.login1.Manager", "PrepareForShutdown",
-      "/org/freedesktop/login1", NULL, G_DBUS_SIGNAL_FLAGS_NONE,
-      on_shutdown_signal, NULL, NULL);
-
-  app->lock_sub_id = g_dbus_connection_signal_subscribe(
-      app->session_bus, "org.cinnamon.ScreenSaver", "org.cinnamon.ScreenSaver",
-      "ActiveChanged", "/org/cinnamon/ScreenSaver", NULL,
-      G_DBUS_SIGNAL_FLAGS_NONE, on_lock_signal, NULL, NULL);
-
-  app->idle_timer_id =
-      g_timeout_add_seconds(app->idle_poll_seconds, poll_idle_state, app);
-}
-
-static void unsubscribe_signals(AppState *app) {
-  if (app->idle_timer_id != 0) {
-    g_source_remove(app->idle_timer_id);
-  }
-
-  if (app->system_bus != NULL) {
-    if (app->sleep_sub_id != 0) {
-      g_dbus_connection_signal_unsubscribe(app->system_bus, app->sleep_sub_id);
-    }
-    if (app->shutdown_sub_id != 0) {
-      g_dbus_connection_signal_unsubscribe(app->system_bus,
-                                           app->shutdown_sub_id);
-    }
-  }
-
-  if (app->session_bus != NULL && app->lock_sub_id != 0) {
-    g_dbus_connection_signal_unsubscribe(app->session_bus, app->lock_sub_id);
-  }
-}
-
 static void usage(const char *prog) {
   fprintf(stderr, "Usage: %s <idle-threshold-seconds> [idle-poll-seconds]\n",
           prog);
@@ -204,7 +207,9 @@ static void usage(const char *prog) {
 
 int main(int argc, char *argv[]) {
   AppState app = {0};
-  GError *error = NULL;
+  uint64_t idle_interval_ms;
+  uint64_t next_idle_poll_ms;
+  int r;
 
   if (argc < 2 || argc > 3) {
     usage(argv[0]);
@@ -220,48 +225,94 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!connect_buses(&app, &error)) {
-    fprintf(stderr, "failed to connect to D-Bus: %s\n", error->message);
-    g_clear_error(&error);
+  if (!connect_display(&app)) {
+    return 1;
+  }
+
+  r = connect_buses(&app);
+  if (r < 0) {
     if (app.system_bus != NULL) {
-      g_object_unref(app.system_bus);
+      sd_bus_unref(app.system_bus);
     }
     if (app.session_bus != NULL) {
-      g_object_unref(app.session_bus);
+      sd_bus_unref(app.session_bus);
     }
+    XCloseDisplay(app.display);
     return 1;
   }
 
-  if (!connect_display(&app)) {
-    g_object_unref(app.system_bus);
-    g_object_unref(app.session_bus);
-    return 1;
-  }
-
-  subscribe_signals(&app);
-
+  printf("ts=\"");
   {
-    GDateTime *now = g_date_time_new_now_local();
-    gchar *stamp = g_date_time_format(now, "%Y-%m-%d %H:%M:%S");
-
-    printf(
-        "ts=\"%s\" event=listener state=ready idle_threshold=%u idle_poll=%u\n",
-        stamp, app.idle_threshold_seconds, app.idle_poll_seconds);
-    fflush(stdout);
-
-    g_free(stamp);
-    g_date_time_unref(now);
+    char stamp[32];
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &tm_now);
+    printf("%s", stamp);
   }
+  printf("\" event=listener state=ready idle_threshold=%u idle_poll=%u\n",
+         app.idle_threshold_seconds, app.idle_poll_seconds);
+  fflush(stdout);
 
   poll_idle_state(&app);
 
-  app.loop = g_main_loop_new(NULL, FALSE);
-  g_main_loop_run(app.loop);
+  idle_interval_ms = (uint64_t)app.idle_poll_seconds * 1000ULL;
+  next_idle_poll_ms = monotonic_milliseconds() + idle_interval_ms;
 
-  unsubscribe_signals(&app);
-  g_main_loop_unref(app.loop);
+  while (true) {
+    struct pollfd fds[2];
+    nfds_t nfds = 0;
+    uint64_t now_ms = monotonic_milliseconds();
+    int timeout_ms = 0;
+
+    if (sd_bus_get_fd(app.system_bus) >= 0) {
+      fds[nfds].fd = sd_bus_get_fd(app.system_bus);
+      fds[nfds].events = POLLIN;
+      fds[nfds].revents = 0;
+      nfds++;
+    }
+
+    if (sd_bus_get_fd(app.session_bus) >= 0) {
+      fds[nfds].fd = sd_bus_get_fd(app.session_bus);
+      fds[nfds].events = POLLIN;
+      fds[nfds].revents = 0;
+      nfds++;
+    }
+
+    if (next_idle_poll_ms > now_ms) {
+      timeout_ms = (int)(next_idle_poll_ms - now_ms);
+    }
+
+    r = poll(fds, nfds, timeout_ms);
+    if (r < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      fprintf(stderr, "poll failed: %s\n", strerror(errno));
+      break;
+    }
+
+    r = process_bus(app.system_bus);
+    if (r < 0) {
+      fprintf(stderr, "failed to process system bus: %s\n", strerror(-r));
+      break;
+    }
+
+    r = process_bus(app.session_bus);
+    if (r < 0) {
+      fprintf(stderr, "failed to process session bus: %s\n", strerror(-r));
+      break;
+    }
+
+    now_ms = monotonic_milliseconds();
+    if (now_ms >= next_idle_poll_ms) {
+      poll_idle_state(&app);
+      next_idle_poll_ms = now_ms + idle_interval_ms;
+    }
+  }
+
+  sd_bus_unref(app.system_bus);
+  sd_bus_unref(app.session_bus);
   XCloseDisplay(app.display);
-  g_object_unref(app.system_bus);
-  g_object_unref(app.session_bus);
-  return 0;
+  return 1;
 }

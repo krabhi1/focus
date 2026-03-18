@@ -3,7 +3,7 @@ DAEMON_NAME=focusd
 EVENTS_NAME=focus-events
 DIST_DIR=dist
 NATIVE_SRC=native/session_event_listener.c
-NATIVE_FLAGS=$(shell pkg-config --cflags --libs gio-2.0 glib-2.0 x11 xscrnsaver)
+NATIVE_FLAGS=$(shell pkg-config --cflags --libs libsystemd x11 xscrnsaver)
 
 .PHONY: all build clean test fmt
 
