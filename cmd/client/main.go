@@ -33,20 +33,31 @@ func (d *DurationArg) String() string {
 }
 
 func main() {
-	conn, err := net.Dial("unix", "/tmp/focus.sock")
-	if err != nil {
-		fmt.Println("Daemon not running.")
-		return
-	}
-	defer conn.Close()
-
 	command := "status"
 	if len(os.Args) >= 2 {
 		command = os.Args[1]
 	}
 
 	switch command {
+	case "uninstall":
+		uninstallCmd := flag.NewFlagSet("uninstall", flag.ExitOnError)
+		prefix := uninstallCmd.String("prefix", "", "Install prefix (defaults to the current binary directory)")
+		uninstallCmd.Parse(os.Args[2:])
+
+		if err := Uninstall(*prefix); err != nil {
+			fmt.Println("Uninstall failed:", err)
+			return
+		}
+		fmt.Println("Focus uninstalled.")
+		return
 	case "start":
+		conn, err := connectDaemon()
+		if err != nil {
+			fmt.Println("Daemon not running.")
+			return
+		}
+		defer conn.Close()
+
 		startCmd := flag.NewFlagSet("start", flag.ExitOnError)
 		name := startCmd.String("name", "", "Task name")
 
@@ -79,6 +90,13 @@ func main() {
 		}
 		printResponse(res)
 	case "cancel":
+		conn, err := connectDaemon()
+		if err != nil {
+			fmt.Println("Daemon not running.")
+			return
+		}
+		defer conn.Close()
+
 		req := protocol.Request{
 			Command: "cancel",
 		}
@@ -89,6 +107,13 @@ func main() {
 		}
 		printResponse(res)
 	case "history":
+		conn, err := connectDaemon()
+		if err != nil {
+			fmt.Println("Daemon not running.")
+			return
+		}
+		defer conn.Close()
+
 		req := protocol.Request{
 			Command: "history",
 		}
@@ -99,6 +124,13 @@ func main() {
 		}
 		printResponse(res)
 	case "status":
+		conn, err := connectDaemon()
+		if err != nil {
+			fmt.Println("Daemon not running.")
+			return
+		}
+		defer conn.Close()
+
 		req := protocol.Request{
 			Command: "status",
 		}
@@ -111,6 +143,10 @@ func main() {
 	default:
 		fmt.Println("Invalid command")
 	}
+}
+
+func connectDaemon() (net.Conn, error) {
+	return net.Dial("unix", "/tmp/focus.sock")
 }
 
 func SendRequest(conn net.Conn, req protocol.Request) (protocol.Response, error) {

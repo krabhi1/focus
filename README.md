@@ -67,8 +67,6 @@ Manual (recommended for audit): download `install.sh`, review it, then run it.
 
 Install from local source checkout:
 
-Build/install binaries and enable a user-level systemd service:
-
 ```bash
 ./scripts/install.sh
 ```
@@ -89,7 +87,13 @@ systemctl --user status focusd.service
 Uninstall:
 
 ```bash
-./scripts/uninstall.sh
+focus uninstall
+```
+
+For a custom install prefix:
+
+```bash
+focus uninstall --prefix /custom/prefix
 ```
 
 Optional install flags:
@@ -98,6 +102,12 @@ Optional install flags:
 ./scripts/install.sh --prefix /custom/prefix
 ./scripts/install.sh --no-build
 ./scripts/install.sh --no-systemd
+```
+
+For a source checkout, use:
+
+```bash
+./scripts/uninstall.sh
 ```
 
 Current prebuilt release target: `linux/amd64`.

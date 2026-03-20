@@ -5,7 +5,6 @@ set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local}"
 BINDIR="$PREFIX/bin"
 SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"
-NO_SYSTEMD=0
 
 usage() {
   cat <<'EOF'
@@ -13,7 +12,6 @@ Usage: scripts/uninstall.sh [options]
 
 Options:
   --prefix <path>      Remove binaries from <path>/bin (default: ~/.local)
-  --no-systemd         Do not stop/disable/remove user systemd service
   -h, --help           Show this help
 EOF
 }
@@ -24,10 +22,6 @@ while [[ $# -gt 0 ]]; do
       PREFIX="$2"
       BINDIR="$PREFIX/bin"
       shift 2
-      ;;
-    --no-systemd)
-      NO_SYSTEMD=1
-      shift
       ;;
     -h|--help)
       usage
@@ -41,7 +35,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$NO_SYSTEMD" -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
+if command -v systemctl >/dev/null 2>&1; then
   SERVICE_TARGET="$SYSTEMD_USER_DIR/focusd.service"
   if [[ -f "$SERVICE_TARGET" ]]; then
     systemctl --user disable --now focusd.service || true
