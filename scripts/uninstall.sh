@@ -49,4 +49,8 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 rm -f "$BINDIR/focus" "$BINDIR/focusd" "$BINDIR/focus-events"
+rm -rf "$PREFIX/share/focus/assets"
+if [[ -d "$PREFIX/share/focus" ]] && [[ -z "$(ls -A "$PREFIX/share/focus" 2>/dev/null)" ]]; then
+  rmdir "$PREFIX/share/focus" || true
+fi
 echo "Removed binaries from $BINDIR"

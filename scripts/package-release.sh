@@ -91,6 +91,7 @@ for target in "${target_array[@]}"; do
   native_flags="$(pkg-config --cflags --libs libsystemd x11 xscrnsaver)"
   gcc -Wall -Wextra -O2 "$ROOT_DIR/native/session_event_listener.c" -o "$pkg_dir/focus-events" $native_flags
 
+  cp -r "$ROOT_DIR/assets" "$pkg_dir/assets"
   cp "$ROOT_DIR/README.md" "$pkg_dir/README.md"
 
   tarball="focus_${VERSION}_${goos}_${goarch}.tar.gz"

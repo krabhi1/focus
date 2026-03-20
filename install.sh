@@ -117,6 +117,10 @@ mkdir -p "$BINDIR"
 install -m 0755 "$extracted_dir/focus" "$BINDIR/focus"
 install -m 0755 "$extracted_dir/focusd" "$BINDIR/focusd"
 install -m 0755 "$extracted_dir/focus-events" "$BINDIR/focus-events"
+mkdir -p "$PREFIX/share/focus/assets"
+if [[ -d "$extracted_dir/assets" ]]; then
+  cp -r "$extracted_dir/assets/." "$PREFIX/share/focus/assets/"
+fi
 echo "Installed binaries to $BINDIR"
 
 if [[ "$NO_SYSTEMD" -eq 1 ]]; then

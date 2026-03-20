@@ -84,5 +84,13 @@ func removeInstalledBinaries(bindir string) error {
 		}
 	}
 
+	prefix := filepath.Dir(bindir)
+	assetsDir := filepath.Join(prefix, "share", "focus", "assets")
+	if err := os.RemoveAll(assetsDir); err != nil {
+		return fmt.Errorf("remove assets directory: %w", err)
+	}
+
+	_ = os.Remove(filepath.Join(prefix, "share", "focus"))
+
 	return nil
 }

@@ -58,6 +58,8 @@ mkdir -p "$BINDIR"
 install -m 0755 "$ROOT_DIR/dist/focus" "$BINDIR/focus"
 install -m 0755 "$ROOT_DIR/dist/focusd" "$BINDIR/focusd"
 install -m 0755 "$ROOT_DIR/dist/focus-events" "$BINDIR/focus-events"
+mkdir -p "$PREFIX/share/focus/assets"
+cp -r "$ROOT_DIR/assets/." "$PREFIX/share/focus/assets/"
 
 echo "Installed binaries to $BINDIR"
 

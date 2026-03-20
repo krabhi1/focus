@@ -52,6 +52,18 @@ flowchart TB
 
 For now this is only available in Linux and tested with cinnamon desktop environment. It should work in other environments as well, but I haven't tested it yet.
 
+Runtime dependencies used by `focusd`:
+
+- `xdg-screensaver` for screen lock
+- `notify-send` for desktop notifications
+- `paplay` for task-ending sound (`assets/task-ending.mp3`)
+- `focus-events` helper binary (installed alongside `focusd`)
+
+Environment-specific notes:
+
+- `cinnamon-screensaver-command` is used for unlock action (currently not part of normal user flow).
+- `systemctl --user` is needed only if you use the user service install path.
+
 ## Run
 
 Build everything with:
@@ -110,6 +122,7 @@ Install from local source checkout:
 This installs:
 
 - `focus`, `focusd`, and `focus-events` to `~/.local/bin` (by default)
+- sound assets to `~/.local/share/focus/assets`
 - `focusd.service` to `~/.config/systemd/user/focusd.service`
 
 Manage service manually if needed:

@@ -11,6 +11,7 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 	tmp := t.TempDir()
 	prefix := filepath.Join(tmp, "focus-prefix")
 	bindir := filepath.Join(prefix, "bin")
+	assetsDir := filepath.Join(prefix, "share", "focus", "assets")
 	serviceDir := filepath.Join(tmp, "home", ".config", "systemd", "user")
 	servicePath := filepath.Join(serviceDir, "focusd.service")
 	fakeBin := filepath.Join(tmp, "fake-bin")
@@ -20,6 +21,9 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(serviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(bindir, "focus"), []byte("x"), 0o755); err != nil {
@@ -32,6 +36,9 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(servicePath, []byte("[Service]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "task-ending.mp3"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
@@ -57,6 +64,9 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 	}
 	if _, err := os.Stat(servicePath); !os.IsNotExist(err) {
 		t.Fatalf("service file still exists after uninstall")
+	}
+	if _, err := os.Stat(assetsDir); !os.IsNotExist(err) {
+		t.Fatalf("assets dir still exists after uninstall")
 	}
 
 	logBytes, err := os.ReadFile(systemctlLog)
