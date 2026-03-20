@@ -1,8 +1,10 @@
 package state
 
 import (
+	"context"
 	"focus/internal/sys"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -299,6 +301,35 @@ func TestGetStatusShowsBreakAndRelockCountdown(t *testing.T) {
 	}
 }
 
+func TestIdleMonitorLocksWhenCooldownActive(t *testing.T) {
+	s := newTestState(t)
+	actions := &atomicRecordingActions{}
+	s.actions = actions
+	s.cooldownUntil = time.Now().Add(150 * time.Millisecond)
+
+	cfg := DefaultRuntimeConfig()
+	cfg.IdlePollInterval = 10 * time.Millisecond
+	cfg.IdleWarnAfter = 5 * time.Minute
+	cfg.IdleLockAfter = 10 * time.Minute
+	if err := SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.StartIdleMonitor(ctx)
+
+	deadline := time.Now().Add(400 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.lockCount.Load() > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("expected cooldown lock via idle monitor; lockCount=%d", actions.lockCount.Load())
+}
+
 type recordingActions struct {
 	lockCount       int
 	notifyCount     int
@@ -319,3 +350,17 @@ func (r *recordingActions) Notify(title string, body string) {
 	r.lastNotifyTitle = title
 	r.lastNotifyBody = body
 }
+
+type atomicRecordingActions struct {
+	lockCount atomic.Int32
+}
+
+func (a *atomicRecordingActions) LockScreen() {
+	a.lockCount.Add(1)
+}
+
+func (a *atomicRecordingActions) UnlockScreen() {}
+
+func (a *atomicRecordingActions) PlaySound(string) {}
+
+func (a *atomicRecordingActions) Notify(string, string) {}

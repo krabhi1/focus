@@ -25,6 +25,14 @@ func (s *DaemonState) StartIdleMonitor(ctx context.Context) {
 				continue
 			}
 
+			if remaining := s.cooldownRemainingLocked(time.Now()); remaining > 0 {
+				actions.LockScreen()
+				s.idleSince = time.Time{}
+				s.notified = false
+				s.mu.Unlock()
+				continue
+			}
+
 			if s.idleSince.IsZero() {
 				s.idleSince = time.Now()
 			}
