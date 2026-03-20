@@ -11,6 +11,7 @@ import (
 )
 
 type DurationArg time.Duration // any of [short(15m),medium(30m),long(60m),deep(90min)]
+
 func (d *DurationArg) Set(value string) error {
 	// Mapping inside the function to keep it clean
 	durations := map[string]time.Duration{
@@ -39,16 +40,12 @@ func main() {
 	}
 	defer conn.Close()
 
-	// conn.Write([]byte(os.Args[1]))
-
-	// buf := make([]byte, 512)
-	// n, _ := conn.Read(buf)
-	// fmt.Println(string(buf[:n]))
-	if len(os.Args) < 2 {
-		fmt.Println("TODO status")
-		return
+	command := "status"
+	if len(os.Args) >= 2 {
+		command = os.Args[1]
 	}
-	switch os.Args[1] {
+
+	switch command {
 	case "start":
 		startCmd := flag.NewFlagSet("start", flag.ExitOnError)
 		name := startCmd.String("name", "", "Task name")
@@ -75,13 +72,12 @@ func main() {
 				Duration: duration,
 			},
 		}
-		fmt.Println(*name, duration, req)
 		res, err := SendRequest(conn, req)
 		if err != nil {
 			fmt.Println("Error sending request:", err)
 			return
 		}
-		fmt.Println("Response:", res)
+		printResponse(res)
 	case "cancel":
 		req := protocol.Request{
 			Command: "cancel",
@@ -91,7 +87,7 @@ func main() {
 			fmt.Println("Error sending request:", err)
 			return
 		}
-		fmt.Println("Response:", res)
+		printResponse(res)
 	case "status":
 		req := protocol.Request{
 			Command: "status",
@@ -101,21 +97,32 @@ func main() {
 			fmt.Println("Error sending request:", err)
 			return
 		}
-		fmt.Println("Response:", res)
+		printResponse(res)
 	default:
 		fmt.Println("Invalid command")
 	}
 }
 
 func SendRequest(conn net.Conn, req protocol.Request) (protocol.Response, error) {
-	//Send the request
-	gob.NewEncoder(conn).Encode(req)
-	//Wait for the response
+	if err := gob.NewEncoder(conn).Encode(req); err != nil {
+		return protocol.Response{}, err
+	}
+
 	var res protocol.Response
 	err := gob.NewDecoder(conn).Decode(&res)
 	if err != nil {
-		fmt.Println("Error decoding response:", err)
 		return protocol.Response{}, err
 	}
 	return res, err
+}
+
+func printResponse(res protocol.Response) {
+	switch payload := res.Payload.(type) {
+	case protocol.SuccessResponse:
+		fmt.Println(payload.Message)
+	case protocol.ErrorResponse:
+		fmt.Println(payload.Message)
+	default:
+		fmt.Printf("%s: %+v\n", res.Type, res.Payload)
+	}
 }

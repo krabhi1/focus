@@ -48,6 +48,8 @@ var global = &DaemonState{
 	isSystemLocked: false,
 }
 
+var cooldownDurationPolicy = cooldownDurationFor
+
 // Get returns the singleton instance
 func Get() *DaemonState {
 	return global
@@ -180,7 +182,7 @@ func (s *DaemonState) GetStatus() string {
 }
 
 func (s *DaemonState) beginCooldownLocked(task *Task, now time.Time) {
-	s.cooldownUntil = now.Add(cooldownDurationFor(task.Duration))
+	s.cooldownUntil = now.Add(cooldownDurationPolicy(task.Duration))
 }
 
 func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
@@ -203,6 +205,40 @@ func cooldownDurationFor(duration time.Duration) time.Duration {
 	default:
 		return BreakDuration
 	}
+}
+
+func SetCooldownDurationPolicyForTest(policy func(time.Duration) time.Duration) func() {
+	oldPolicy := cooldownDurationPolicy
+	if policy == nil {
+		cooldownDurationPolicy = cooldownDurationFor
+	} else {
+		cooldownDurationPolicy = policy
+	}
+
+	return func() {
+		cooldownDurationPolicy = oldPolicy
+	}
+}
+
+func (s *DaemonState) ResetForTest() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.beforeExpireTimer != nil {
+		s.beforeExpireTimer.Stop()
+		s.beforeExpireTimer = nil
+	}
+	if s.expireTimer != nil {
+		s.expireTimer.Stop()
+		s.expireTimer = nil
+	}
+
+	s.currentTask = nil
+	s.taskHistory = []*Task{}
+	s.cooldownUntil = time.Time{}
+	s.isSystemLocked = false
+	s.idleSince = time.Time{}
+	s.notified = false
 }
 
 func (s *DaemonState) StartIdleMonitor() {
