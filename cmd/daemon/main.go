@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -40,6 +41,7 @@ func main() {
 		log.Printf("config startup failed: %v", err)
 		return
 	}
+	warnMissingRuntimeDependencies(exec.LookPath)
 
 	srv := NewServer(state.Get(), sys.RealActions{}, applyConfig)
 
@@ -207,6 +209,27 @@ func logHelperErrors(errCh <-chan error) {
 	for err := range errCh {
 		if err != nil {
 			log.Printf("focus-events error: %v", err)
+		}
+	}
+}
+
+func warnMissingRuntimeDependencies(lookPath func(string) (string, error)) {
+	if lookPath == nil {
+		return
+	}
+
+	deps := []struct {
+		command string
+		impact  string
+	}{
+		{command: "xdg-screensaver", impact: "screen lock action will fail"},
+		{command: "notify-send", impact: "desktop notifications will fail"},
+		{command: "paplay", impact: "task-ending sound will fail"},
+	}
+
+	for _, dep := range deps {
+		if _, err := lookPath(dep.command); err != nil {
+			log.Printf("warning: missing dependency '%s': %s", dep.command, dep.impact)
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -96,6 +97,48 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	}
 	if !strings.Contains(historyRes.Success.Message, "second task") {
 		t.Fatalf("history = %q, want second task", historyRes.Success.Message)
+	}
+}
+
+func TestConnectionReloadFlow(t *testing.T) {
+	st := newTestState(t)
+
+	socketPath := filepath.Join(t.TempDir(), "focus.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Listen failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	})
+
+	var reloadCalls atomic.Int32
+	srv := NewServer(st, sys.NoopActions{}, func() error {
+		reloadCalls.Add(1)
+		return nil
+	})
+
+	acceptDone := make(chan struct{})
+	go func() {
+		defer close(acceptDone)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go srv.HandleConnection(conn)
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-acceptDone
+	})
+
+	res := roundTripRequest(t, socketPath, protocol.Request{Command: "reload"})
+	assertSuccessMessageContains(t, res, "Config reloaded.")
+	if got := reloadCalls.Load(); got != 1 {
+		t.Fatalf("reload calls = %d, want 1", got)
 	}
 }
 
