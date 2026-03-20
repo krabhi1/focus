@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 )
 
@@ -34,22 +35,24 @@ func main() {
 		go logHelperErrors(listener.Errors)
 	}
 
-	if err := ensureSocketPathAvailable(state.SocketPath); err != nil {
+	socketPath := state.SocketPath()
+
+	if err := ensureSocketPathAvailable(socketPath); err != nil {
 		log.Printf("socket path setup failed: %v", err)
 		return
 	}
 
-	l, err := net.Listen("unix", state.SocketPath)
+	l, err := net.Listen("unix", socketPath)
 	if err != nil {
 		fmt.Printf("Listen error: %v\n", err)
 		return
 	}
 	defer func() {
 		_ = l.Close()
-		_ = os.Remove(state.SocketPath)
+		_ = os.Remove(socketPath)
 	}()
 
-	fmt.Println("Go Daemon listening on", state.SocketPath)
+	fmt.Println("Go Daemon listening on", socketPath)
 	go state.Get().StartIdleMonitor(ctx)
 
 	go func() {
@@ -71,6 +74,10 @@ func main() {
 }
 
 func ensureSocketPathAvailable(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create socket directory: %w", err)
+	}
+
 	info, err := os.Lstat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

@@ -28,7 +28,6 @@ const (
 	IdleLockAfter       = 5 * time.Minute
 	IdleMonitorInterval = 30 * time.Second
 
-	SocketPath             = "/tmp/focus.sock"
 	TaskLockedWaitDuration = 2 * time.Minute
 )
 
