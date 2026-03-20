@@ -1,7 +1,6 @@
 package state
 
 import (
-	"focus/internal/sys"
 	"time"
 )
 
@@ -9,10 +8,7 @@ func (s *DaemonState) StartIdleMonitor() {
 	ticker := time.NewTicker(30 * time.Second)
 	for range ticker.C {
 		s.mu.Lock()
-		actions := s.actions
-		if actions == nil {
-			actions = sys.RealActions{}
-		}
+		actions := s.actionsLocked()
 
 		if s.currentTask != nil || s.isSystemLocked {
 			s.idleSince = time.Time{}

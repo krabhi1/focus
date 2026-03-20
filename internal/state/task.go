@@ -6,11 +6,22 @@ import (
 	"time"
 )
 
+type breakPlan struct {
+	startOffset time.Duration
+	duration    time.Duration
+}
+
 func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.currentTask != nil {
+		if s.currentTask.Status == StatusBreak {
+			remaining := s.breakRemainingLocked(time.Now())
+			if remaining > 0 {
+				return nil, fmt.Errorf("break active, wait %s before creating a new task", remaining.Round(time.Second))
+			}
+		}
 		return nil, fmt.Errorf("a task '%s' is already active", s.currentTask.Title)
 	}
 
@@ -28,7 +39,6 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 
 	s.currentTask = task
 	s.taskHistory = append(s.taskHistory, task)
-
 	s.setupTimers(task)
 
 	return task, nil
@@ -36,10 +46,7 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 
 func (s *DaemonState) setupTimers(task *Task) {
 	expireTime := task.StartTime.Add(task.Duration)
-	actions := s.actions
-	if actions == nil {
-		actions = sys.RealActions{}
-	}
+	actions := s.actionsLocked()
 
 	warningTime := time.Until(expireTime.Add(-5 * time.Minute))
 	if warningTime > 0 {
@@ -51,8 +58,20 @@ func (s *DaemonState) setupTimers(task *Task) {
 	}
 
 	s.expireTimer = time.AfterFunc(task.Duration, func() {
-		s.completeCurrentTask(task.Title)
+		s.completeCurrentTask(task.ID)
 	})
+
+	if plan, ok := breakPlanForDuration(task.Duration); ok {
+		warnAt := plan.startOffset - BreakWarningOffset
+		if warnAt > 0 {
+			s.breakWarnTimer = time.AfterFunc(warnAt, func() {
+				s.notifyBreakComing(task.ID)
+			})
+		}
+		s.breakStartTimer = time.AfterFunc(plan.startOffset, func() {
+			s.startBreak(task.ID, plan.duration)
+		})
+	}
 }
 
 func (s *DaemonState) CancelCurrentTask() (*Task, error) {
@@ -74,9 +93,9 @@ func (s *DaemonState) CancelCurrentTask() (*Task, error) {
 	return task, nil
 }
 
-func (s *DaemonState) completeCurrentTask(title string) {
+func (s *DaemonState) completeCurrentTask(taskID int) {
 	s.mu.Lock()
-	if s.currentTask == nil || s.currentTask.Title != title {
+	if s.currentTask == nil || s.currentTask.ID != taskID {
 		s.mu.Unlock()
 		return
 	}
@@ -84,19 +103,126 @@ func (s *DaemonState) completeCurrentTask(title string) {
 	task := s.currentTask
 	task.Status = StatusCompleted
 	s.beginCooldownLocked(task, time.Now())
-	actions := s.actions
-	if actions == nil {
-		actions = sys.RealActions{}
-	}
+	actions := s.actionsLocked()
 	s.cleanupTask()
 	s.mu.Unlock()
 
-	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", title))
+	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", task.Title))
 	time.Sleep(5 * time.Second)
+}
+
+func (s *DaemonState) notifyBreakComing(taskID int) {
+	s.mu.Lock()
+	if s.currentTask == nil || s.currentTask.ID != taskID || s.currentTask.Status != StatusActive {
+		s.mu.Unlock()
+		return
+	}
+	title := s.currentTask.Title
+	actions := s.actionsLocked()
+	s.mu.Unlock()
+
+	actions.Notify("Break Reminder", fmt.Sprintf("Break starts in %s for '%s'", BreakWarningOffset, title))
+}
+
+func (s *DaemonState) startBreak(taskID int, breakDuration time.Duration) {
+	s.mu.Lock()
+	if s.currentTask == nil || s.currentTask.ID != taskID || s.currentTask.Status != StatusActive {
+		s.mu.Unlock()
+		return
+	}
+
+	s.currentTask.Status = StatusBreak
+	s.breakUntil = time.Now().Add(breakDuration)
+	actions := s.actionsLocked()
+	s.breakEndTimer = time.AfterFunc(breakDuration, func() {
+		s.endBreak(taskID)
+	})
+	s.mu.Unlock()
+
+	actions.Notify("Break Started", fmt.Sprintf("Break for %s has started", breakDuration.Round(time.Second)))
+	actions.LockScreen()
+}
+
+func (s *DaemonState) endBreak(taskID int) {
+	s.mu.Lock()
+	if s.currentTask == nil || s.currentTask.ID != taskID || s.currentTask.Status != StatusBreak {
+		s.mu.Unlock()
+		return
+	}
+
+	s.currentTask.Status = StatusActive
+	s.breakUntil = time.Time{}
+	if s.breakEndTimer != nil {
+		s.breakEndTimer.Stop()
+		s.breakEndTimer = nil
+	}
+	if s.breakRelockTimer != nil {
+		s.breakRelockTimer.Stop()
+		s.breakRelockTimer = nil
+	}
+	actions := s.actionsLocked()
+	s.mu.Unlock()
+
+	actions.Notify("Break Complete", "Break period ended. Continue your task.")
+}
+
+func (s *DaemonState) OnScreenUnlocked() {
+	s.mu.Lock()
+	if s.currentTask == nil || s.currentTask.Status != StatusBreak {
+		s.mu.Unlock()
+		return
+	}
+
+	taskID := s.currentTask.ID
+	breakRemaining := s.breakRemainingLocked(time.Now())
+	if breakRemaining <= 0 {
+		s.mu.Unlock()
+		return
+	}
+
+	actions := s.actionsLocked()
+	notifyUser := s.breakRelockTimer == nil
+	if s.breakRelockTimer != nil {
+		s.breakRelockTimer.Stop()
+	}
+	s.breakRelockTimer = time.AfterFunc(BreakRelockDelay, func() {
+		s.relockIfBreak(taskID)
+	})
+	s.mu.Unlock()
+
+	if notifyUser {
+		actions.Notify("Break Active", "Break is active. Locking again in 30 seconds.")
+	}
+}
+
+func (s *DaemonState) OnScreenLocked() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.breakRelockTimer != nil {
+		s.breakRelockTimer.Stop()
+		s.breakRelockTimer = nil
+	}
+}
+
+func (s *DaemonState) relockIfBreak(taskID int) {
+	s.mu.Lock()
+	if s.currentTask == nil || s.currentTask.ID != taskID || s.currentTask.Status != StatusBreak {
+		s.mu.Unlock()
+		return
+	}
+	if s.isSystemLocked {
+		s.mu.Unlock()
+		return
+	}
+	actions := s.actionsLocked()
+	s.mu.Unlock()
+
+	actions.LockScreen()
 }
 
 func (s *DaemonState) cleanupTask() {
 	s.currentTask = nil
+	s.breakUntil = time.Time{}
 	if s.beforeExpireTimer != nil {
 		s.beforeExpireTimer.Stop()
 		s.beforeExpireTimer = nil
@@ -104,6 +230,22 @@ func (s *DaemonState) cleanupTask() {
 	if s.expireTimer != nil {
 		s.expireTimer.Stop()
 		s.expireTimer = nil
+	}
+	if s.breakWarnTimer != nil {
+		s.breakWarnTimer.Stop()
+		s.breakWarnTimer = nil
+	}
+	if s.breakStartTimer != nil {
+		s.breakStartTimer.Stop()
+		s.breakStartTimer = nil
+	}
+	if s.breakEndTimer != nil {
+		s.breakEndTimer.Stop()
+		s.breakEndTimer = nil
+	}
+	if s.breakRelockTimer != nil {
+		s.breakRelockTimer.Stop()
+		s.breakRelockTimer = nil
 	}
 }
 
@@ -117,8 +259,19 @@ func (s *DaemonState) GetStatus() string {
 		}
 		return "Idle"
 	}
-	remaining := time.Until(s.currentTask.StartTime.Add(s.currentTask.Duration))
-	return fmt.Sprintf("Task: %s | Remaining: %s", s.currentTask.Title, remaining.Round(time.Second))
+
+	taskRemaining := time.Until(s.currentTask.StartTime.Add(s.currentTask.Duration)).Round(time.Second)
+	if s.currentTask.Status == StatusBreak {
+		breakRemaining := s.breakRemainingLocked(time.Now()).Round(time.Second)
+		return fmt.Sprintf(
+			"Task: %s | On break: %s remaining | Task remaining: %s",
+			s.currentTask.Title,
+			breakRemaining,
+			taskRemaining,
+		)
+	}
+
+	return fmt.Sprintf("Task: %s | Remaining: %s", s.currentTask.Title, taskRemaining)
 }
 
 func (s *DaemonState) History() []Task {
@@ -133,4 +286,38 @@ func (s *DaemonState) History() []Task {
 		history = append(history, *task)
 	}
 	return history
+}
+
+func (s *DaemonState) breakRemainingLocked(now time.Time) time.Duration {
+	if s.breakUntil.IsZero() {
+		return 0
+	}
+	if !now.Before(s.breakUntil) {
+		return 0
+	}
+	return s.breakUntil.Sub(now)
+}
+
+func (s *DaemonState) actionsLocked() sys.Actions {
+	if s.actions == nil {
+		return sys.RealActions{}
+	}
+	return s.actions
+}
+
+func breakPlanForDuration(duration time.Duration) (breakPlan, bool) {
+	switch {
+	case duration >= 90*time.Minute:
+		return breakPlan{
+			startOffset: DeepTaskBreakStartOffset,
+			duration:    10 * time.Minute,
+		}, true
+	case duration >= 60*time.Minute:
+		return breakPlan{
+			startOffset: LongTaskBreakStartOffset,
+			duration:    5 * time.Minute,
+		}, true
+	default:
+		return breakPlan{}, false
+	}
 }

@@ -11,12 +11,18 @@ type TaskStatus string
 
 const (
 	StatusActive    TaskStatus = "active"
+	StatusBreak     TaskStatus = "break"
 	StatusCompleted TaskStatus = "completed"
 	StatusCancelled TaskStatus = "cancelled"
 
 	BreakDuration     = 5 * time.Minute
 	LongBreakDuration = 10 * time.Minute
 	DeepBreakDuration = 15 * time.Minute
+
+	LongTaskBreakStartOffset = 25 * time.Minute
+	DeepTaskBreakStartOffset = 45 * time.Minute
+	BreakWarningOffset       = 2 * time.Minute
+	BreakRelockDelay         = 30 * time.Second
 
 	SocketPath             = "/tmp/focus.sock"
 	TaskLockedWaitDuration = 2 * time.Minute
@@ -36,6 +42,11 @@ type DaemonState struct {
 	taskHistory       []*Task
 	beforeExpireTimer *time.Timer
 	expireTimer       *time.Timer
+	breakWarnTimer    *time.Timer
+	breakStartTimer   *time.Timer
+	breakEndTimer     *time.Timer
+	breakRelockTimer  *time.Timer
+	breakUntil        time.Time
 	cooldownUntil     time.Time
 	cooldownPolicy    func(time.Duration) time.Duration
 	isSystemLocked    bool

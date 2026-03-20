@@ -1,6 +1,7 @@
 package state
 
 import (
+	"focus/internal/sys"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 func newTestState() *DaemonState {
 	return &DaemonState{
 		taskHistory: []*Task{},
+		actions:     sys.NoopActions{},
 	}
 }
 
@@ -108,4 +110,87 @@ func TestGetStatusShowsCooldown(t *testing.T) {
 	if !strings.Contains(status, "Remaining:") {
 		t.Fatalf("status = %q, want remaining time", status)
 	}
+}
+
+func TestBreakPlanForDuration(t *testing.T) {
+	cases := []struct {
+		name         string
+		duration     time.Duration
+		wantHasBreak bool
+		wantStart    time.Duration
+		wantBreakDur time.Duration
+	}{
+		{name: "short", duration: 15 * time.Minute, wantHasBreak: false},
+		{name: "medium", duration: 30 * time.Minute, wantHasBreak: false},
+		{name: "long", duration: 60 * time.Minute, wantHasBreak: true, wantStart: LongTaskBreakStartOffset, wantBreakDur: 5 * time.Minute},
+		{name: "deep", duration: 90 * time.Minute, wantHasBreak: true, wantStart: DeepTaskBreakStartOffset, wantBreakDur: 10 * time.Minute},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, ok := breakPlanForDuration(tc.duration)
+			if ok != tc.wantHasBreak {
+				t.Fatalf("breakPlanForDuration(%s) hasBreak = %v, want %v", tc.duration, ok, tc.wantHasBreak)
+			}
+			if !tc.wantHasBreak {
+				return
+			}
+			if plan.startOffset != tc.wantStart {
+				t.Fatalf("startOffset = %s, want %s", plan.startOffset, tc.wantStart)
+			}
+			if plan.duration != tc.wantBreakDur {
+				t.Fatalf("duration = %s, want %s", plan.duration, tc.wantBreakDur)
+			}
+		})
+	}
+}
+
+func TestOnScreenUnlockedSchedulesRelockDuringBreak(t *testing.T) {
+	s := newTestState()
+	actions := &recordingActions{}
+	s.actions = actions
+	s.currentTask = &Task{
+		ID:        1,
+		Title:     "deep work",
+		Duration:  90 * time.Minute,
+		StartTime: time.Now(),
+		Status:    StatusBreak,
+	}
+	s.breakUntil = time.Now().Add(time.Minute)
+
+	s.OnScreenUnlocked()
+
+	if s.breakRelockTimer == nil {
+		t.Fatal("expected relock timer to be scheduled")
+	}
+	if actions.notifyCount != 1 {
+		t.Fatalf("notifyCount = %d, want 1", actions.notifyCount)
+	}
+
+	s.relockIfBreak(1)
+	if actions.lockCount != 1 {
+		t.Fatalf("lockCount = %d, want 1", actions.lockCount)
+	}
+
+	s.OnScreenLocked()
+	if s.breakRelockTimer != nil {
+		t.Fatal("expected relock timer to be cleared after lock event")
+	}
+}
+
+type recordingActions struct {
+	lockCount   int
+	notifyCount int
+}
+
+func (r *recordingActions) LockScreen() {
+	r.lockCount++
+}
+
+func (r *recordingActions) UnlockScreen() {}
+
+func (r *recordingActions) PlaySound(string) {}
+
+func (r *recordingActions) Notify(string, string) {
+	r.notifyCount++
 }

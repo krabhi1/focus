@@ -71,8 +71,10 @@ func consumeHelperEvents(eventCh <-chan events.Event) {
 			switch event.State {
 			case "locked":
 				state.Get().SetSystemLocked(true)
+				state.Get().OnScreenLocked()
 			case "unlocked":
 				state.Get().SetSystemLocked(false)
+				state.Get().OnScreenUnlocked()
 			}
 		}
 		log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
