@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"focus/internal/events"
 	"focus/internal/state"
@@ -33,8 +34,10 @@ func main() {
 		go logHelperErrors(listener.Errors)
 	}
 
-	// Remove old socket if it exists
-	os.Remove(state.SocketPath)
+	if err := ensureSocketPathAvailable(state.SocketPath); err != nil {
+		log.Printf("socket path setup failed: %v", err)
+		return
+	}
 
 	l, err := net.Listen("unix", state.SocketPath)
 	if err != nil {
@@ -65,6 +68,24 @@ func main() {
 
 		go srv.HandleConnection(conn)
 	}
+}
+
+func ensureSocketPathAvailable(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat socket path: %w", err)
+	}
+
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("refusing to remove non-socket path: %s", path)
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove stale socket: %w", err)
+	}
+	return nil
 }
 
 func consumeHelperEvents(eventCh <-chan events.Event) {
