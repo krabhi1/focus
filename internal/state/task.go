@@ -160,6 +160,7 @@ func (s *DaemonState) endBreak(taskID int) {
 		s.breakRelockTimer.Stop()
 		s.breakRelockTimer = nil
 	}
+	s.breakRelockUntil = time.Time{}
 	actions := s.actionsLocked()
 	s.mu.Unlock()
 
@@ -185,6 +186,7 @@ func (s *DaemonState) OnScreenUnlocked() {
 	if s.breakRelockTimer != nil {
 		s.breakRelockTimer.Stop()
 	}
+	s.breakRelockUntil = time.Now().Add(BreakRelockDelay)
 	s.breakRelockTimer = time.AfterFunc(BreakRelockDelay, func() {
 		s.relockIfBreak(taskID)
 	})
@@ -202,6 +204,7 @@ func (s *DaemonState) OnScreenLocked() {
 		s.breakRelockTimer.Stop()
 		s.breakRelockTimer = nil
 	}
+	s.breakRelockUntil = time.Time{}
 }
 
 func (s *DaemonState) relockIfBreak(taskID int) {
@@ -214,6 +217,7 @@ func (s *DaemonState) relockIfBreak(taskID int) {
 		s.mu.Unlock()
 		return
 	}
+	s.breakRelockUntil = time.Time{}
 	actions := s.actionsLocked()
 	s.mu.Unlock()
 
@@ -247,6 +251,7 @@ func (s *DaemonState) cleanupTask() {
 		s.breakRelockTimer.Stop()
 		s.breakRelockTimer = nil
 	}
+	s.breakRelockUntil = time.Time{}
 }
 
 func (s *DaemonState) GetStatus() string {
@@ -260,15 +265,24 @@ func (s *DaemonState) GetStatus() string {
 		return "Idle"
 	}
 
-	taskRemaining := time.Until(s.currentTask.StartTime.Add(s.currentTask.Duration)).Round(time.Second)
+	now := time.Now()
+	taskRemaining := s.currentTask.StartTime.Add(s.currentTask.Duration).Sub(now)
+	if taskRemaining < 0 {
+		taskRemaining = 0
+	}
+	taskRemaining = taskRemaining.Round(time.Second)
 	if s.currentTask.Status == StatusBreak {
-		breakRemaining := s.breakRemainingLocked(time.Now()).Round(time.Second)
-		return fmt.Sprintf(
-			"Task: %s | On break: %s remaining | Task remaining: %s",
+		breakRemaining := s.breakRemainingLocked(now).Round(time.Second)
+		status := fmt.Sprintf(
+			"Task: %s | Status: break | Break remaining: %s | Task remaining: %s",
 			s.currentTask.Title,
 			breakRemaining,
 			taskRemaining,
 		)
+		if relockRemaining := s.breakRelockRemainingLocked(now); relockRemaining > 0 {
+			status += fmt.Sprintf(" | Re-lock in: %s", relockRemaining.Round(time.Second))
+		}
+		return status
 	}
 
 	return fmt.Sprintf("Task: %s | Remaining: %s", s.currentTask.Title, taskRemaining)
@@ -296,6 +310,16 @@ func (s *DaemonState) breakRemainingLocked(now time.Time) time.Duration {
 		return 0
 	}
 	return s.breakUntil.Sub(now)
+}
+
+func (s *DaemonState) breakRelockRemainingLocked(now time.Time) time.Duration {
+	if s.breakRelockUntil.IsZero() {
+		return 0
+	}
+	if !now.Before(s.breakRelockUntil) {
+		return 0
+	}
+	return s.breakRelockUntil.Sub(now)
 }
 
 func (s *DaemonState) actionsLocked() sys.Actions {

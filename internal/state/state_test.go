@@ -166,21 +166,120 @@ func TestOnScreenUnlockedSchedulesRelockDuringBreak(t *testing.T) {
 	if actions.notifyCount != 1 {
 		t.Fatalf("notifyCount = %d, want 1", actions.notifyCount)
 	}
+	if actions.lastNotifyTitle != "Break Active" {
+		t.Fatalf("last notify title = %q, want %q", actions.lastNotifyTitle, "Break Active")
+	}
+	if s.breakRelockUntil.IsZero() {
+		t.Fatal("expected relock deadline to be set")
+	}
 
 	s.relockIfBreak(1)
 	if actions.lockCount != 1 {
 		t.Fatalf("lockCount = %d, want 1", actions.lockCount)
+	}
+	if !s.breakRelockUntil.IsZero() {
+		t.Fatal("expected relock deadline to be cleared after relock")
 	}
 
 	s.OnScreenLocked()
 	if s.breakRelockTimer != nil {
 		t.Fatal("expected relock timer to be cleared after lock event")
 	}
+	if !s.breakRelockUntil.IsZero() {
+		t.Fatal("expected relock deadline to be cleared after lock event")
+	}
+}
+
+func TestNotifyBreakComingUsesWarningOffset(t *testing.T) {
+	s := newTestState()
+	actions := &recordingActions{}
+	s.actions = actions
+	s.currentTask = &Task{
+		ID:        2,
+		Title:     "long work",
+		Duration:  60 * time.Minute,
+		StartTime: time.Now(),
+		Status:    StatusActive,
+	}
+
+	s.notifyBreakComing(2)
+
+	if actions.notifyCount != 1 {
+		t.Fatalf("notifyCount = %d, want 1", actions.notifyCount)
+	}
+	if actions.lastNotifyTitle != "Break Reminder" {
+		t.Fatalf("last notify title = %q, want %q", actions.lastNotifyTitle, "Break Reminder")
+	}
+	if !strings.Contains(actions.lastNotifyBody, "2m0s") {
+		t.Fatalf("notify body = %q, want warning offset", actions.lastNotifyBody)
+	}
+}
+
+func TestEndBreakClearsBreakState(t *testing.T) {
+	s := newTestState()
+	actions := &recordingActions{}
+	s.actions = actions
+	task := &Task{
+		ID:        3,
+		Title:     "deep work",
+		Duration:  90 * time.Minute,
+		StartTime: time.Now(),
+		Status:    StatusBreak,
+	}
+	s.currentTask = task
+	s.breakUntil = time.Now().Add(5 * time.Minute)
+	s.breakRelockUntil = time.Now().Add(30 * time.Second)
+	s.breakRelockTimer = time.AfterFunc(time.Hour, func() {})
+
+	s.endBreak(3)
+
+	if task.Status != StatusActive {
+		t.Fatalf("task status = %q, want %q", task.Status, StatusActive)
+	}
+	if !s.breakUntil.IsZero() {
+		t.Fatalf("breakUntil = %v, want zero", s.breakUntil)
+	}
+	if s.breakRelockTimer != nil {
+		t.Fatal("breakRelockTimer should be nil")
+	}
+	if !s.breakRelockUntil.IsZero() {
+		t.Fatalf("breakRelockUntil = %v, want zero", s.breakRelockUntil)
+	}
+	if actions.lastNotifyTitle != "Break Complete" {
+		t.Fatalf("last notify title = %q, want %q", actions.lastNotifyTitle, "Break Complete")
+	}
+}
+
+func TestGetStatusShowsBreakAndRelockCountdown(t *testing.T) {
+	s := newTestState()
+	s.currentTask = &Task{
+		ID:        4,
+		Title:     "deep work",
+		Duration:  90 * time.Minute,
+		StartTime: time.Now().Add(-10 * time.Minute),
+		Status:    StatusBreak,
+	}
+	s.breakUntil = time.Now().Add(3 * time.Minute)
+	s.breakRelockUntil = time.Now().Add(20 * time.Second)
+
+	status := s.GetStatus()
+
+	if !strings.Contains(status, "Status: break") {
+		t.Fatalf("status = %q, want break status", status)
+	}
+	if !strings.Contains(status, "Break remaining:") {
+		t.Fatalf("status = %q, want break remaining", status)
+	}
+	if !strings.Contains(status, "Re-lock in:") {
+		t.Fatalf("status = %q, want relock countdown", status)
+	}
 }
 
 type recordingActions struct {
-	lockCount   int
-	notifyCount int
+	lockCount       int
+	notifyCount     int
+	lastNotifyTitle string
+	lastNotifyBody  string
 }
 
 func (r *recordingActions) LockScreen() {
@@ -191,6 +290,8 @@ func (r *recordingActions) UnlockScreen() {}
 
 func (r *recordingActions) PlaySound(string) {}
 
-func (r *recordingActions) Notify(string, string) {
+func (r *recordingActions) Notify(title string, body string) {
 	r.notifyCount++
+	r.lastNotifyTitle = title
+	r.lastNotifyBody = body
 }
