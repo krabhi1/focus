@@ -5,6 +5,8 @@ import (
 	"focus/internal/protocol"
 	"focus/internal/state"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +21,34 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	state.Get().ResetForTest()
 	t.Cleanup(state.Get().ResetForTest)
 
-	res := roundTripRequest(t, protocol.Request{
+	socketPath := filepath.Join(t.TempDir(), "focus.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Listen failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	})
+
+	acceptDone := make(chan struct{})
+	srv := NewServer(state.Get())
+	go func() {
+		defer close(acceptDone)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go srv.HandleConnection(conn)
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-acceptDone
+	})
+
+	res := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
 		Payload: protocol.StartRequest{
 			Title:    "integration task",
@@ -30,7 +59,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 
 	time.Sleep(40 * time.Millisecond)
 
-	statusRes := roundTripRequest(t, protocol.Request{Command: "status"})
+	statusRes := roundTripRequest(t, socketPath, protocol.Request{Command: "status"})
 	statusPayload, ok := statusRes.Payload.(protocol.SuccessResponse)
 	if !ok {
 		t.Fatalf("payload = %#v, want success response", statusRes.Payload)
@@ -39,7 +68,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 		t.Fatalf("status = %q, want cooldown", statusPayload.Message)
 	}
 
-	cooldownRes := roundTripRequest(t, protocol.Request{
+	cooldownRes := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
 		Payload: protocol.StartRequest{
 			Title:    "blocked task",
@@ -56,7 +85,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 
 	time.Sleep(250 * time.Millisecond)
 
-	retryRes := roundTripRequest(t, protocol.Request{
+	retryRes := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
 		Payload: protocol.StartRequest{
 			Title:    "second task",
@@ -66,26 +95,21 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	assertSuccessMessageContains(t, retryRes, "Started task: second task")
 }
 
-func roundTripRequest(t *testing.T, req protocol.Request) protocol.Response {
+func roundTripRequest(t *testing.T, socketPath string, req protocol.Request) protocol.Response {
 	t.Helper()
 
-	clientConn, serverConn := net.Pipe()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		handleConnection(serverConn)
-	}()
-	defer func() {
-		_ = clientConn.Close()
-		<-done
-	}()
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Dial failed: %v", err)
+	}
+	defer conn.Close()
 
-	if err := gob.NewEncoder(clientConn).Encode(req); err != nil {
+	if err := gob.NewEncoder(conn).Encode(req); err != nil {
 		t.Fatalf("Encode failed: %v", err)
 	}
 
 	var res protocol.Response
-	if err := gob.NewDecoder(clientConn).Decode(&res); err != nil {
+	if err := gob.NewDecoder(conn).Decode(&res); err != nil {
 		t.Fatalf("Decode failed: %v", err)
 	}
 	return res

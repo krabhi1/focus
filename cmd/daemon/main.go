@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/gob"
 	"fmt"
 	"focus/internal/events"
-	"focus/internal/protocol"
 	"focus/internal/state"
-	"focus/internal/sys"
 	"log"
 	"net"
 	"os"
@@ -23,6 +20,7 @@ const (
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
+	srv := NewServer(state.Get())
 
 	// Cleanup socket on exit
 	c := make(chan os.Signal, 1)
@@ -61,54 +59,8 @@ func main() {
 			continue
 		}
 
-		go handleConnection(conn)
+		go srv.HandleConnection(conn)
 	}
-}
-
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	var req protocol.Request
-	err := gob.NewDecoder(conn).Decode(&req)
-	if err != nil {
-		fmt.Printf("Decode error: %v\n", err)
-		return
-	}
-	fmt.Printf("Received ==> %+v\n", req)
-	var res protocol.Response
-	switch req.Command {
-	case "start":
-		startReq, ok := req.Payload.(protocol.StartRequest)
-		if !ok {
-			res = protocol.Response{
-				Type: "error",
-				Payload: protocol.ErrorResponse{
-					Message: fmt.Sprintf("invalid start payload type %T", req.Payload),
-				},
-			}
-			break
-		}
-		res = handleStart(startReq)
-	case "status":
-		res = handleStatus()
-	case "cancel":
-		res = handleCancel()
-	default:
-		fmt.Printf("Unknown command: %s\n", req.Command)
-		res = protocol.Response{
-			Type: "error",
-			Payload: protocol.ErrorResponse{
-				Message: fmt.Sprintf("Unknown command: %s", req.Command),
-			},
-		}
-	}
-
-	err = gob.NewEncoder(conn).Encode(res)
-	if err != nil {
-		fmt.Printf("Encode error: %v\n", err)
-		return
-	}
-
 }
 
 func consumeHelperEvents(eventCh <-chan events.Event) {
@@ -131,53 +83,5 @@ func logHelperErrors(errCh <-chan error) {
 		if err != nil {
 			log.Printf("focus-events error: %v", err)
 		}
-	}
-}
-
-func handleStart(req protocol.StartRequest) protocol.Response {
-	task, err := state.Get().NewTask(req.Title, req.Duration)
-	if err != nil {
-		return protocol.Response{
-			Type: "error",
-			Payload: protocol.ErrorResponse{
-				Message: err.Error(),
-			},
-		}
-	}
-	sys.Notify("Task Started", fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration))
-	return protocol.Response{
-		Type: "success",
-		Payload: protocol.SuccessResponse{
-			Message: fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration),
-		},
-	}
-}
-
-func handleStatus() protocol.Response {
-	return protocol.Response{
-		Type: "success",
-		Payload: protocol.SuccessResponse{
-			Message: state.Get().GetStatus(),
-		},
-	}
-}
-
-func handleCancel() protocol.Response {
-
-	task, err := state.Get().CancelCurrentTask()
-	if err != nil {
-		return protocol.Response{
-			Type: "error",
-			Payload: protocol.ErrorResponse{
-				Message: fmt.Sprintf("Failed to cancel task: %v", err),
-			},
-		}
-	}
-	sys.Notify("Task Cancelled", fmt.Sprintf("Cancelled the task: %s", task.Title))
-	return protocol.Response{
-		Type: "success",
-		Payload: protocol.SuccessResponse{
-			Message: fmt.Sprintf("Cancelled the task: %s", task.Title),
-		},
 	}
 }
