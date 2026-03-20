@@ -39,6 +39,9 @@ func main() {
 	}
 
 	switch command {
+	case "version":
+		printVersion()
+		return
 	case "uninstall":
 		uninstallCmd := flag.NewFlagSet("uninstall", flag.ExitOnError)
 		prefix := uninstallCmd.String("prefix", "", "Install prefix (defaults to the current binary directory)")
@@ -49,6 +52,19 @@ func main() {
 			return
 		}
 		fmt.Println("Focus uninstalled.")
+		return
+	case "update":
+		updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
+		targetVersion := updateCmd.String("version", "", "Release version to install (default: latest)")
+		prefix := updateCmd.String("prefix", "", "Install prefix (defaults to the current binary directory)")
+		yes := updateCmd.Bool("yes", false, "Skip confirmation prompt")
+		updateCmd.Parse(os.Args[2:])
+
+		if err := Update(*targetVersion, *prefix, *yes); err != nil {
+			fmt.Println("Update failed:", err)
+			return
+		}
+		fmt.Println("Focus updated.")
 		return
 	case "start":
 		conn, err := connectDaemon()

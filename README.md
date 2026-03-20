@@ -96,6 +96,32 @@ For a custom install prefix:
 focus uninstall --prefix /custom/prefix
 ```
 
+Check installed version:
+
+```bash
+focus version
+```
+
+Update to the latest release:
+
+```bash
+focus update
+```
+
+Update to a specific release:
+
+```bash
+focus update --version v0.1.2
+```
+
+For custom installs:
+
+```bash
+focus update --prefix /custom/prefix
+```
+
+Note: release updates currently target `linux/amd64`, matching the published release assets.
+
 Optional install flags:
 
 ```bash

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 func Uninstall(prefix string) error {
@@ -35,16 +36,17 @@ func resolveBinDir(prefix string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve current executable: %w", err)
 	}
+	if strings.HasPrefix(exe, os.TempDir()) || strings.Contains(exe, "go-build") {
+		return "", fmt.Errorf("current executable looks temporary; use --prefix or scripts/uninstall.sh instead")
+	}
 	return filepath.Dir(exe), nil
 }
 
 func removeUserService() error {
-	home, err := os.UserHomeDir()
+	servicePath, err := userServicePath()
 	if err != nil {
-		return fmt.Errorf("resolve home directory: %w", err)
+		return err
 	}
-
-	servicePath := filepath.Join(home, ".config", "systemd", "user", "focusd.service")
 	if _, err := os.Stat(servicePath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil

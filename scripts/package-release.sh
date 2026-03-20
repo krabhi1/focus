@@ -77,7 +77,7 @@ for target in "${target_array[@]}"; do
   mkdir -p "$pkg_dir"
 
   echo "Building focus and focusd for $goos/$goarch..."
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/focus" "$ROOT_DIR/cmd/client"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w -X focus/cmd/client.version=$VERSION" -o "$pkg_dir/focus" "$ROOT_DIR/cmd/client"
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/focusd" "$ROOT_DIR/cmd/daemon"
 
   if [[ "$goos" != "$HOST_GOOS" || "$goarch" != "$HOST_GOARCH" ]]; then

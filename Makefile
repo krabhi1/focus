@@ -1,3 +1,4 @@
+BINARY_VERSION?=dev
 BINARY_NAME=focus
 DAEMON_NAME=focusd
 EVENTS_NAME=focus-events
@@ -14,7 +15,7 @@ all: clean build
 build:
 	@echo "Building $(BINARY_NAME), $(DAEMON_NAME), and $(EVENTS_NAME)..."
 	@mkdir -p $(DIST_DIR)
-	@go build -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/client
+	@go build -ldflags="-X focus/cmd/client.version=$(BINARY_VERSION)" -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/client
 	@go build -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/daemon
 	@gcc -Wall -Wextra -O2 $(NATIVE_SRC) -o $(DIST_DIR)/$(EVENTS_NAME) $(NATIVE_FLAGS)
 
