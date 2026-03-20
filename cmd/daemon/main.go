@@ -7,6 +7,7 @@ import (
 	"focus/internal/events"
 	"focus/internal/protocol"
 	"focus/internal/state"
+	"focus/internal/sys"
 	"log"
 	"net"
 	"os"
@@ -122,16 +123,16 @@ func logHelperErrors(errCh <-chan error) {
 }
 
 func handleStart(req protocol.StartRequest) protocol.Response {
-	if currentTitle, ok := state.Global.CurrentTaskTitle(); ok {
-		fmt.Printf("A task is already running: %s\n", currentTitle)
+	task, err := state.Global.NewTask(req.Title, req.Duration)
+	if err != nil {
 		return protocol.Response{
 			Type: "error",
 			Payload: protocol.ErrorResponse{
-				Message: fmt.Sprintf("A task is already running: %s", currentTitle),
+				Message: err.Error(),
 			},
 		}
 	}
-	task, _ := state.Global.NewTask(req.Title, req.Duration)
+	sys.Notify("Task Started", fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration))
 	return protocol.Response{
 		Type: "success",
 		Payload: protocol.SuccessResponse{
@@ -160,6 +161,7 @@ func handleCancel() protocol.Response {
 			},
 		}
 	}
+	sys.Notify("Task Cancelled", fmt.Sprintf("Cancelled the task: %s", task.Title))
 	return protocol.Response{
 		Type: "success",
 		Payload: protocol.SuccessResponse{

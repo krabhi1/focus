@@ -24,7 +24,7 @@ type DaemonState struct {
 
 const (
 	SocketPath             = "/tmp/focus.sock"
-	TaskLockedWaitDuration = 5 * time.Minute
+	TaskLockedWaitDuration = 2 * time.Minute
 )
 
 var Global = &DaemonState{
