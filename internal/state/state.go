@@ -12,7 +12,7 @@ type Task struct {
 	Title     string
 	Duration  time.Duration
 	StartTime time.Time
-	Status    string // "active", "completed", "stopped"
+	Status    string // "active", "completed", "cancelled"
 }
 type DaemonState struct {
 	mu                sync.Mutex
@@ -22,19 +22,21 @@ type DaemonState struct {
 	ExpireTimer       *time.Timer
 }
 
-const SocketPath = "/tmp/focus.sock"
+const (
+	SocketPath             = "/tmp/focus.sock"
+	TaskLockedWaitDuration = 5 * time.Minute
+)
 
 var Global = &DaemonState{
 	CurrentTask: nil,
 	TaskHistory: []Task{},
 }
 
-func (state *DaemonState) NewTask(title string, duration time.Duration) Task {
+func (state *DaemonState) NewTask(title string, duration time.Duration) (*Task, error) {
 	state.mu.Lock()
-	stoppedTitle, stopped := "", false
 
 	if state.CurrentTask != nil {
-		stoppedTitle, stopped = state.stopCurrentTaskLocked()
+		return nil, fmt.Errorf("A task is already active. Please cancel it before starting a new one")
 	}
 
 	task := Task{
@@ -61,21 +63,32 @@ func (state *DaemonState) NewTask(title string, duration time.Duration) Task {
 	})
 	state.mu.Unlock()
 
-	if stopped {
-		sys.Notify("Task stopped", fmt.Sprintf("'%s' has been stopped.", stoppedTitle))
-	}
-
-	return task
+	return &task, nil
 }
 
-func (state *DaemonState) StopCurrentTask() {
+func (state *DaemonState) CancelCurrentTask() (*Task, error) {
 	state.mu.Lock()
-	title, stopped := state.stopCurrentTaskLocked()
-	state.mu.Unlock()
+	defer state.mu.Unlock()
 
-	if stopped {
-		sys.Notify("Task stopped", fmt.Sprintf("'%s' has been stopped.", title))
+	if state.CurrentTask == nil {
+		return nil, fmt.Errorf("no current task to cancel")
 	}
+	isLocked := state.CurrentTask.StartTime.Add(TaskLockedWaitDuration).Before(time.Now())
+	if isLocked {
+		return nil, fmt.Errorf("Task is locked and cannot be cancelled")
+	}
+	cancelledTask := state.CurrentTask
+	state.CurrentTask.Status = "cancelled"
+	state.CurrentTask = nil
+	if state.BeforeExpireTimer != nil {
+		state.BeforeExpireTimer.Stop()
+		state.BeforeExpireTimer = nil
+	}
+	if state.ExpireTimer != nil {
+		state.ExpireTimer.Stop()
+		state.ExpireTimer = nil
+	}
+	return cancelledTask, nil
 }
 
 func (state *DaemonState) GetStatus() string {
@@ -98,26 +111,6 @@ func (state *DaemonState) CurrentTaskTitle() (string, bool) {
 	}
 
 	return state.CurrentTask.Title, true
-}
-
-func (state *DaemonState) stopCurrentTaskLocked() (string, bool) {
-	if state.CurrentTask == nil {
-		return "", false
-	}
-
-	title := state.CurrentTask.Title
-	state.CurrentTask.Status = "stopped"
-	state.CurrentTask = nil
-	if state.BeforeExpireTimer != nil {
-		state.BeforeExpireTimer.Stop()
-		state.BeforeExpireTimer = nil
-	}
-	if state.ExpireTimer != nil {
-		state.ExpireTimer.Stop()
-		state.ExpireTimer = nil
-	}
-
-	return title, true
 }
 
 func (state *DaemonState) completeCurrentTask(expectedTitle string) {

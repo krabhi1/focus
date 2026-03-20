@@ -87,8 +87,8 @@ func handleConnection(conn net.Conn) {
 		res = handleStart(req.Payload.(protocol.StartRequest))
 	case "status":
 		res = handleStatus()
-	case "stop":
-		res = handleStop()
+	case "cancel":
+		res = handleCancel()
 	default:
 		fmt.Printf("Unknown command: %s\n", req.Command)
 		res = protocol.Response{
@@ -131,7 +131,7 @@ func handleStart(req protocol.StartRequest) protocol.Response {
 			},
 		}
 	}
-	task := state.Global.NewTask(req.Title, req.Duration)
+	task, _ := state.Global.NewTask(req.Title, req.Duration)
 	return protocol.Response{
 		Type: "success",
 		Payload: protocol.SuccessResponse{
@@ -149,21 +149,21 @@ func handleStatus() protocol.Response {
 	}
 }
 
-func handleStop() protocol.Response {
-	currentTitle, ok := state.Global.CurrentTaskTitle()
-	if !ok {
+func handleCancel() protocol.Response {
+
+	task, err := state.Global.CancelCurrentTask()
+	if err != nil {
 		return protocol.Response{
-			Type: "success",
-			Payload: protocol.SuccessResponse{
-				Message: "No active task to stop",
+			Type: "error",
+			Payload: protocol.ErrorResponse{
+				Message: fmt.Sprintf("Failed to cancel task: %v", err),
 			},
 		}
 	}
-	state.Global.StopCurrentTask()
 	return protocol.Response{
 		Type: "success",
 		Payload: protocol.SuccessResponse{
-			Message: fmt.Sprintf("Stopped the task: %s", currentTitle),
+			Message: fmt.Sprintf("Cancelled the task: %s", task.Title),
 		},
 	}
 }

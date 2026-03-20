@@ -7,7 +7,29 @@ import (
 	"focus/internal/protocol"
 	"net"
 	"os"
+	"time"
 )
+
+type DurationArg time.Duration // any of [short(15m),medium(30m),long(60m),deep(90min)]
+func (d *DurationArg) Set(value string) error {
+	// Mapping inside the function to keep it clean
+	durations := map[string]time.Duration{
+		"short":  15 * time.Minute,
+		"medium": 30 * time.Minute,
+		"long":   60 * time.Minute,
+		"deep":   90 * time.Minute,
+	}
+
+	if val, ok := durations[value]; ok {
+		*d = DurationArg(val)
+		return nil
+	}
+	return fmt.Errorf("choose [short(15m),medium(30m),long(60m),deep(90min)")
+}
+
+func (d *DurationArg) String() string {
+	return time.Duration(*d).String()
+}
 
 func main() {
 	conn, err := net.Dial("unix", "/tmp/focus.sock")
@@ -30,7 +52,9 @@ func main() {
 	case "start":
 		startCmd := flag.NewFlagSet("start", flag.ExitOnError)
 		name := startCmd.String("name", "", "Task name")
-		duration := startCmd.Duration("duration", 0, "Duration of the task ex 20s,15m")
+
+		var durationArg DurationArg
+		startCmd.Var(&durationArg, "duration", "Duration [short, medium, long, deep]")
 		startCmd.Parse(os.Args[2:])
 		required := map[string]bool{"name": false, "duration": false}
 		startCmd.Visit(func(f *flag.Flag) {
@@ -42,23 +66,25 @@ func main() {
 				return
 			}
 		}
+		duration := time.Duration(durationArg)
+
 		req := protocol.Request{
 			Command: "start",
 			Payload: protocol.StartRequest{
 				Title:    *name,
-				Duration: *duration,
+				Duration: duration,
 			},
 		}
-		fmt.Println(*name, *duration, req)
+		fmt.Println(*name, duration, req)
 		res, err := SendRequest(conn, req)
 		if err != nil {
 			fmt.Println("Error sending request:", err)
 			return
 		}
 		fmt.Println("Response:", res)
-	case "stop":
+	case "cancel":
 		req := protocol.Request{
-			Command: "stop",
+			Command: "cancel",
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
