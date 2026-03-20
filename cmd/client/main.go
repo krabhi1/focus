@@ -25,7 +25,7 @@ func (d *DurationArg) Set(value string) error {
 		*d = DurationArg(val)
 		return nil
 	}
-	return fmt.Errorf("choose [short(15m),medium(30m),long(60m),deep(90min)")
+	return fmt.Errorf("choose one of [short(15m), medium(30m), long(60m), deep(90m)]")
 }
 
 func (d *DurationArg) String() string {
@@ -39,6 +39,9 @@ func main() {
 	}
 
 	switch command {
+	case "help", "-h", "--help":
+		printHelp()
+		return
 	case "version":
 		printVersion()
 		return
@@ -157,8 +160,23 @@ func main() {
 		}
 		printResponse(res)
 	default:
-		fmt.Println("Invalid command")
+		fmt.Printf("Invalid command: %s\n\n", command)
+		printHelp()
 	}
+}
+
+func printHelp() {
+	fmt.Println("Focus CLI")
+	fmt.Println("")
+	fmt.Println("Usage:")
+	fmt.Println("  focus status")
+	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep>")
+	fmt.Println("  focus cancel")
+	fmt.Println("  focus history")
+	fmt.Println("  focus version")
+	fmt.Println("  focus update [--version <tag>] [--prefix <path>] [--yes]")
+	fmt.Println("  focus uninstall [--prefix <path>]")
+	fmt.Println("  focus help")
 }
 
 func connectDaemon() (net.Conn, error) {

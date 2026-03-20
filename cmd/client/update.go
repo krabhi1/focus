@@ -31,7 +31,7 @@ type checksumEntry struct {
 }
 
 func Update(versionArg, prefix string, yes bool) error {
-	if runtime.GOARCH != "amd64" {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		return fmt.Errorf("release updates are currently available only for linux/amd64")
 	}
 
