@@ -13,15 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
-
-type Task struct {
-	Title      string
-	Duration   time.Duration
-	StartTime  time.Time
-	ExpireTime time.Time
-}
 
 const socketPath = "/tmp/focus.sock"
 const (
@@ -61,7 +53,7 @@ func main() {
 	defer l.Close()
 
 	fmt.Println("Go Daemon listening on", socketPath)
-	state.Get().StartIdleMonitor()
+	go state.Get().StartIdleMonitor()
 
 	for {
 		conn, err := l.Accept()
@@ -86,7 +78,17 @@ func handleConnection(conn net.Conn) {
 	var res protocol.Response
 	switch req.Command {
 	case "start":
-		res = handleStart(req.Payload.(protocol.StartRequest))
+		startReq, ok := req.Payload.(protocol.StartRequest)
+		if !ok {
+			res = protocol.Response{
+				Type: "error",
+				Payload: protocol.ErrorResponse{
+					Message: fmt.Sprintf("invalid start payload type %T", req.Payload),
+				},
+			}
+			break
+		}
+		res = handleStart(startReq)
 	case "status":
 		res = handleStatus()
 	case "cancel":

@@ -7,7 +7,7 @@ The system operates via a background daemon (`focusd`) that handles time trackin
 ## Rules
 
 - **Intentional Use:** Focus gives you a 5-minute grace period to use your computer without an active task. Beyond that, the system will warn you before locking the screen or putting the computer to sleep.
-- **One Thing at a Time:** Only one task can be active at once. When you finish a task, you have 5 minutes to start your next session before the system locks or sleeps.
+- **One Thing at a Time:** Only one task can be active at once. When you finish a task, the daemon enforces a cooldown before you can start the next one. Shorter sessions get a shorter wait, longer sessions get a longer wait.
 - **Work Modes:**
   - **Light Work (25 min):** For routine tasks that allow for multitasking. Requires a 5-minute break and concludes with a screen lock.
   - **Deep Work (90 min):** For high-concentration sessions without distractions. Requires a 15-minute break and concludes with the system sleeping.

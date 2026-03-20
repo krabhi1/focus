@@ -14,11 +14,9 @@ const (
 	StatusCompleted TaskStatus = "completed"
 	StatusCancelled TaskStatus = "cancelled"
 
-	BreakDuration = 5 * time.Minute
-	LongBreakDuration  = 10 * time.Minute
-
-	NewTaskWaitDuration= 5 * time.Second
-	LongNewTaskWaitDuration = 15 * time.Second
+	BreakDuration     = 5 * time.Minute
+	LongBreakDuration = 10 * time.Minute
+	DeepBreakDuration = 15 * time.Minute
 
 	SocketPath             = "/tmp/focus.sock"
 	TaskLockedWaitDuration = 2 * time.Minute
@@ -38,7 +36,7 @@ type DaemonState struct {
 	taskHistory       []*Task
 	beforeExpireTimer *time.Timer
 	expireTimer       *time.Timer
-	breakTimer        *time.Timer
+	cooldownUntil     time.Time
 	isSystemLocked    bool
 	idleSince         time.Time
 	notified          bool
@@ -74,6 +72,10 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 		return nil, fmt.Errorf("a task '%s' is already active", s.currentTask.Title)
 	}
 
+	if remaining := s.cooldownRemainingLocked(time.Now()); remaining > 0 {
+		return nil, fmt.Errorf("cooldown active, wait %s before creating a new task", remaining.Round(time.Second))
+	}
+
 	task := &Task{
 		ID:        len(s.taskHistory) + 1,
 		Title:     title,
@@ -94,7 +96,7 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 func (s *DaemonState) setupTimers(task *Task) {
 	expireTime := task.StartTime.Add(task.Duration)
 
-	// 10-second warning
+	// Warning before the task ends.
 	warningTime := time.Until(expireTime.Add(-5 * time.Minute))
 	if warningTime > 0 {
 		s.beforeExpireTimer = time.AfterFunc(warningTime, func() {
@@ -140,6 +142,7 @@ func (s *DaemonState) completeCurrentTask(title string) {
 
 	task := s.currentTask
 	task.Status = StatusCompleted
+	s.beginCooldownLocked(task, time.Now())
 	s.cleanupTask()
 	s.mu.Unlock()
 
@@ -167,11 +170,41 @@ func (s *DaemonState) GetStatus() string {
 	defer s.mu.Unlock()
 
 	if s.currentTask == nil {
+		if remaining := s.cooldownRemainingLocked(time.Now()); remaining > 0 {
+			return fmt.Sprintf("Cooldown active | Remaining: %s", remaining.Round(time.Second))
+		}
 		return "Idle"
 	}
 	remaining := time.Until(s.currentTask.StartTime.Add(s.currentTask.Duration))
 	return fmt.Sprintf("Task: %s | Remaining: %s", s.currentTask.Title, remaining.Round(time.Second))
 }
+
+func (s *DaemonState) beginCooldownLocked(task *Task, now time.Time) {
+	s.cooldownUntil = now.Add(cooldownDurationFor(task.Duration))
+}
+
+func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
+	if s.cooldownUntil.IsZero() {
+		return 0
+	}
+	if !now.Before(s.cooldownUntil) {
+		s.cooldownUntil = time.Time{}
+		return 0
+	}
+	return s.cooldownUntil.Sub(now)
+}
+
+func cooldownDurationFor(duration time.Duration) time.Duration {
+	switch {
+	case duration >= 90*time.Minute:
+		return DeepBreakDuration
+	case duration >= 60*time.Minute:
+		return LongBreakDuration
+	default:
+		return BreakDuration
+	}
+}
+
 func (s *DaemonState) StartIdleMonitor() {
 	ticker := time.NewTicker(30 * time.Second)
 	for range ticker.C {
