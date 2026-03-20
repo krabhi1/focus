@@ -7,127 +7,200 @@ import (
 	"time"
 )
 
+type TaskStatus string
+
+const (
+	StatusActive    TaskStatus = "active"
+	StatusCompleted TaskStatus = "completed"
+	StatusCancelled TaskStatus = "cancelled"
+
+	BreakDuration = 5 * time.Minute
+	LongBreakDuration  = 10 * time.Minute
+
+	NewTaskWaitDuration= 5 * time.Second
+	LongNewTaskWaitDuration = 15 * time.Second
+
+	SocketPath             = "/tmp/focus.sock"
+	TaskLockedWaitDuration = 2 * time.Minute
+)
+
 type Task struct {
 	ID        int
 	Title     string
 	Duration  time.Duration
 	StartTime time.Time
-	Status    string // "active", "completed", "cancelled"
+	Status    TaskStatus
 }
+
 type DaemonState struct {
 	mu                sync.Mutex
-	CurrentTask       *Task
-	TaskHistory       []Task
-	BeforeExpireTimer *time.Timer
-	ExpireTimer       *time.Timer
+	currentTask       *Task
+	taskHistory       []*Task
+	beforeExpireTimer *time.Timer
+	expireTimer       *time.Timer
+	breakTimer        *time.Timer
+	isSystemLocked    bool
+	idleSince         time.Time
+	notified          bool
 }
 
-const (
-	SocketPath             = "/tmp/focus.sock"
-	TaskLockedWaitDuration = 2 * time.Minute
-)
-
-var Global = &DaemonState{
-	CurrentTask: nil,
-	TaskHistory: []Task{},
+// global is private to enforce using methods
+var global = &DaemonState{
+	taskHistory:    []*Task{},
+	isSystemLocked: false,
 }
 
-func (state *DaemonState) NewTask(title string, duration time.Duration) (*Task, error) {
-	state.mu.Lock()
+// Get returns the singleton instance
+func Get() *DaemonState {
+	return global
+}
 
-	if state.CurrentTask != nil {
-		return nil, fmt.Errorf("A task is already active. Please cancel it before starting a new one")
+func (s *DaemonState) SetSystemLocked(locked bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.isSystemLocked = locked
+}
+func (s *DaemonState) IsSystemLocked() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.isSystemLocked
+}
+
+func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.currentTask != nil {
+		return nil, fmt.Errorf("a task '%s' is already active", s.currentTask.Title)
 	}
 
-	task := Task{
-		ID:        len(state.TaskHistory) + 1,
+	task := &Task{
+		ID:        len(s.taskHistory) + 1,
 		Title:     title,
 		Duration:  duration,
 		StartTime: time.Now(),
-		Status:    "active",
+		Status:    StatusActive,
 	}
+
+	s.currentTask = task
+	s.taskHistory = append(s.taskHistory, task)
+
+	// Setup Timers
+	s.setupTimers(task)
+
+	return task, nil
+}
+
+func (s *DaemonState) setupTimers(task *Task) {
 	expireTime := task.StartTime.Add(task.Duration)
-	state.CurrentTask = &task
-	state.TaskHistory = append(state.TaskHistory, *state.CurrentTask)
-	//create a timer before 10 seconds of expire time to notify user
-	beforeExpire := time.Until(expireTime.Add(-10 * time.Second))
-	if beforeExpire > 0 {
-		state.BeforeExpireTimer = time.AfterFunc(beforeExpire, func() {
-			sys.Notify("Task expiring soon", fmt.Sprintf("'%s' will expire in 10 seconds", task.Title))
+
+	// 10-second warning
+	warningTime := time.Until(expireTime.Add(-5 * time.Minute))
+	if warningTime > 0 {
+		s.beforeExpireTimer = time.AfterFunc(warningTime, func() {
+			sys.Notify("Task expiring soon", fmt.Sprintf("'%s' ends in 5m", task.Title))
 			time.Sleep(2 * time.Second)
 			sys.PlaySound("assets/task-ending.mp3")
 		})
 	}
-	state.ExpireTimer = time.AfterFunc(task.Duration, func() {
-		state.completeCurrentTask(task.Title)
+
+	// Final Expiration
+	s.expireTimer = time.AfterFunc(task.Duration, func() {
+		s.completeCurrentTask(task.Title)
 	})
-	state.mu.Unlock()
-
-	return &task, nil
 }
 
-func (state *DaemonState) CancelCurrentTask() (*Task, error) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
+func (s *DaemonState) CancelCurrentTask() (*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if state.CurrentTask == nil {
-		return nil, fmt.Errorf("no current task to cancel")
+	if s.currentTask == nil {
+		return nil, fmt.Errorf("no active task to cancel")
 	}
-	isLocked := state.CurrentTask.StartTime.Add(TaskLockedWaitDuration).Before(time.Now())
-	if isLocked {
-		return nil, fmt.Errorf("Task is locked and cannot be cancelled")
+
+	// Logic: If current time is AFTER (StartTime + 2m), it is locked.
+	if time.Now().After(s.currentTask.StartTime.Add(TaskLockedWaitDuration)) {
+		return nil, fmt.Errorf("task is locked (grace period of %v expired)", TaskLockedWaitDuration)
 	}
-	cancelledTask := state.CurrentTask
-	state.CurrentTask.Status = "cancelled"
-	state.CurrentTask = nil
-	if state.BeforeExpireTimer != nil {
-		state.BeforeExpireTimer.Stop()
-		state.BeforeExpireTimer = nil
-	}
-	if state.ExpireTimer != nil {
-		state.ExpireTimer.Stop()
-		state.ExpireTimer = nil
-	}
-	return cancelledTask, nil
+
+	task := s.currentTask
+	task.Status = StatusCancelled
+	s.cleanupTask()
+
+	return task, nil
 }
 
-func (state *DaemonState) GetStatus() string {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
-	if state.CurrentTask == nil {
-		return "No active task"
-	}
-	expireTime := state.CurrentTask.StartTime.Add(state.CurrentTask.Duration)
-	return fmt.Sprintf("Current task: %s, expires in %s", state.CurrentTask.Title, expireTime)
-}
-
-func (state *DaemonState) CurrentTaskTitle() (string, bool) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
-	if state.CurrentTask == nil {
-		return "", false
-	}
-
-	return state.CurrentTask.Title, true
-}
-
-func (state *DaemonState) completeCurrentTask(expectedTitle string) {
-	state.mu.Lock()
-	if state.CurrentTask == nil || state.CurrentTask.Title != expectedTitle {
-		state.mu.Unlock()
+func (s *DaemonState) completeCurrentTask(title string) {
+	s.mu.Lock()
+	// Validation: Ensure the task wasn't already replaced or cancelled
+	if s.currentTask == nil || s.currentTask.Title != title {
+		s.mu.Unlock()
 		return
 	}
 
-	fmt.Printf("Task expired: %+v\n", state.CurrentTask)
-	state.CurrentTask.Status = "completed"
-	state.CurrentTask = nil
-	state.ExpireTimer = nil
-	state.BeforeExpireTimer = nil
-	state.mu.Unlock()
+	task := s.currentTask
+	task.Status = StatusCompleted
+	s.cleanupTask()
+	s.mu.Unlock()
 
-	sys.Notify("Task expired", fmt.Sprintf("'%s' has expired. Screen is going to Lock", expectedTitle))
+	// Perform UI actions outside the lock to keep daemon responsive
+	sys.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", title))
 	time.Sleep(5 * time.Second)
 	// sys.LockScreen()
+}
+
+// Internal helper to reset state and stop timers
+func (s *DaemonState) cleanupTask() {
+	s.currentTask = nil
+	if s.beforeExpireTimer != nil {
+		s.beforeExpireTimer.Stop()
+		s.beforeExpireTimer = nil
+	}
+	if s.expireTimer != nil {
+		s.expireTimer.Stop()
+		s.expireTimer = nil
+	}
+}
+
+func (s *DaemonState) GetStatus() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.currentTask == nil {
+		return "Idle"
+	}
+	remaining := time.Until(s.currentTask.StartTime.Add(s.currentTask.Duration))
+	return fmt.Sprintf("Task: %s | Remaining: %s", s.currentTask.Title, remaining.Round(time.Second))
+}
+func (s *DaemonState) StartIdleMonitor() {
+	ticker := time.NewTicker(30 * time.Second)
+	for range ticker.C {
+		s.mu.Lock()
+
+		// 1. Reset if busy
+		if s.currentTask != nil || s.isSystemLocked {
+			s.idleSince = time.Time{} // Reset timestamp
+			s.notified = false        // Reset notification flag
+			s.mu.Unlock()
+			continue
+		}
+
+		// 2. Mark start of idleness
+		if s.idleSince.IsZero() {
+			s.idleSince = time.Now()
+		}
+
+		elapsed := time.Since(s.idleSince)
+
+		// 3. Logic Check
+		if elapsed >= 5*time.Minute {
+			sys.LockScreen()
+			s.idleSince = time.Time{} // Stop checking until unlock
+		} else if elapsed >= 3*time.Minute && !s.notified {
+			sys.Notify("Idle Warning", "No task active. Locking in 2 minute.")
+			s.notified = true
+		}
+
+		s.mu.Unlock()
+	}
 }

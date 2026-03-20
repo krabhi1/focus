@@ -61,6 +61,7 @@ func main() {
 	defer l.Close()
 
 	fmt.Println("Go Daemon listening on", socketPath)
+	state.Get().StartIdleMonitor()
 
 	for {
 		conn, err := l.Accept()
@@ -110,6 +111,15 @@ func handleConnection(conn net.Conn) {
 
 func consumeHelperEvents(eventCh <-chan events.Event) {
 	for event := range eventCh {
+		switch event.Kind {
+		case events.KindScreen:
+			switch event.State {
+			case "locked":
+				state.Get().SetSystemLocked(true)
+			case "unlocked":
+				state.Get().SetSystemLocked(false)
+			}
+		}
 		log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
 	}
 }
@@ -123,7 +133,7 @@ func logHelperErrors(errCh <-chan error) {
 }
 
 func handleStart(req protocol.StartRequest) protocol.Response {
-	task, err := state.Global.NewTask(req.Title, req.Duration)
+	task, err := state.Get().NewTask(req.Title, req.Duration)
 	if err != nil {
 		return protocol.Response{
 			Type: "error",
@@ -145,14 +155,14 @@ func handleStatus() protocol.Response {
 	return protocol.Response{
 		Type: "success",
 		Payload: protocol.SuccessResponse{
-			Message: state.Global.GetStatus(),
+			Message: state.Get().GetStatus(),
 		},
 	}
 }
 
 func handleCancel() protocol.Response {
 
-	task, err := state.Global.CancelCurrentTask()
+	task, err := state.Get().CancelCurrentTask()
 	if err != nil {
 		return protocol.Response{
 			Type: "error",
