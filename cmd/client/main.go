@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
+	"focus/internal/state"
 	"focus/internal/protocol"
 	"net"
 	"os"
@@ -180,7 +181,7 @@ func printHelp() {
 }
 
 func connectDaemon() (net.Conn, error) {
-	return net.Dial("unix", "/tmp/focus.sock")
+	return net.Dial("unix", state.SocketPath)
 }
 
 func SendRequest(conn net.Conn, req protocol.Request) (protocol.Response, error) {

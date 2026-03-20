@@ -13,7 +13,6 @@ import (
 	"syscall"
 )
 
-const socketPath = "/tmp/focus.sock"
 const (
 	idleThresholdSeconds = 300
 	idlePollSeconds      = 1
@@ -35,19 +34,19 @@ func main() {
 	}
 
 	// Remove old socket if it exists
-	os.Remove(socketPath)
+	os.Remove(state.SocketPath)
 
-	l, err := net.Listen("unix", socketPath)
+	l, err := net.Listen("unix", state.SocketPath)
 	if err != nil {
 		fmt.Printf("Listen error: %v\n", err)
 		return
 	}
 	defer func() {
 		_ = l.Close()
-		_ = os.Remove(socketPath)
+		_ = os.Remove(state.SocketPath)
 	}()
 
-	fmt.Println("Go Daemon listening on", socketPath)
+	fmt.Println("Go Daemon listening on", state.SocketPath)
 	go state.Get().StartIdleMonitor(ctx)
 
 	go func() {
