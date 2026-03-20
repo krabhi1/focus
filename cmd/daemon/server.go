@@ -38,16 +38,15 @@ func (s *Server) HandleConnection(conn net.Conn) {
 func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 	switch req.Command {
 	case "start":
-		startReq, ok := req.Payload.(protocol.StartRequest)
-		if !ok {
+		if req.Start == nil {
 			return protocol.Response{
 				Type: "error",
-				Payload: protocol.ErrorResponse{
-					Message: fmt.Sprintf("invalid start payload type %T", req.Payload),
+				Error: &protocol.ErrorResponse{
+					Message: "missing start payload",
 				},
 			}
 		}
-		return s.handleStart(startReq)
+		return s.handleStart(*req.Start)
 	case "status":
 		return s.handleStatus()
 	case "cancel":
@@ -56,7 +55,7 @@ func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 		fmt.Printf("Unknown command: %s\n", req.Command)
 		return protocol.Response{
 			Type: "error",
-			Payload: protocol.ErrorResponse{
+			Error: &protocol.ErrorResponse{
 				Message: fmt.Sprintf("Unknown command: %s", req.Command),
 			},
 		}
@@ -68,7 +67,7 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 	if err != nil {
 		return protocol.Response{
 			Type: "error",
-			Payload: protocol.ErrorResponse{
+			Error: &protocol.ErrorResponse{
 				Message: err.Error(),
 			},
 		}
@@ -76,7 +75,7 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 	sys.Notify("Task Started", fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration))
 	return protocol.Response{
 		Type: "success",
-		Payload: protocol.SuccessResponse{
+		Success: &protocol.SuccessResponse{
 			Message: fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration),
 		},
 	}
@@ -85,7 +84,7 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 func (s *Server) handleStatus() protocol.Response {
 	return protocol.Response{
 		Type: "success",
-		Payload: protocol.SuccessResponse{
+		Success: &protocol.SuccessResponse{
 			Message: s.state.GetStatus(),
 		},
 	}
@@ -96,7 +95,7 @@ func (s *Server) handleCancel() protocol.Response {
 	if err != nil {
 		return protocol.Response{
 			Type: "error",
-			Payload: protocol.ErrorResponse{
+			Error: &protocol.ErrorResponse{
 				Message: fmt.Sprintf("Failed to cancel task: %v", err),
 			},
 		}
@@ -104,7 +103,7 @@ func (s *Server) handleCancel() protocol.Response {
 	sys.Notify("Task Cancelled", fmt.Sprintf("Cancelled the task: %s", task.Title))
 	return protocol.Response{
 		Type: "success",
-		Payload: protocol.SuccessResponse{
+		Success: &protocol.SuccessResponse{
 			Message: fmt.Sprintf("Cancelled the task: %s", task.Title),
 		},
 	}

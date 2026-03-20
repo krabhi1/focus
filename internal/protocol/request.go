@@ -1,20 +1,13 @@
 package protocol
 
-import (
-	"encoding/gob"
-	"time"
-)
+import "time"
 
 type Request struct {
 	Command string
-	Payload any
+	Start   *StartRequest
 }
 
 type StartRequest struct {
 	Title    string
 	Duration time.Duration
-}
-
-func init() {
-	gob.Register(StartRequest{})
 }

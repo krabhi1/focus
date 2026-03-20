@@ -50,7 +50,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 
 	res := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
-		Payload: protocol.StartRequest{
+		Start: &protocol.StartRequest{
 			Title:    "integration task",
 			Duration: 10 * time.Millisecond,
 		},
@@ -60,34 +60,32 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	time.Sleep(40 * time.Millisecond)
 
 	statusRes := roundTripRequest(t, socketPath, protocol.Request{Command: "status"})
-	statusPayload, ok := statusRes.Payload.(protocol.SuccessResponse)
-	if !ok {
-		t.Fatalf("payload = %#v, want success response", statusRes.Payload)
+	if statusRes.Success == nil {
+		t.Fatalf("response = %#v, want success response", statusRes)
 	}
-	if !strings.Contains(statusPayload.Message, "Cooldown active") {
-		t.Fatalf("status = %q, want cooldown", statusPayload.Message)
+	if !strings.Contains(statusRes.Success.Message, "Cooldown active") {
+		t.Fatalf("status = %q, want cooldown", statusRes.Success.Message)
 	}
 
 	cooldownRes := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
-		Payload: protocol.StartRequest{
+		Start: &protocol.StartRequest{
 			Title:    "blocked task",
 			Duration: 10 * time.Millisecond,
 		},
 	})
-	errorPayload, ok := cooldownRes.Payload.(protocol.ErrorResponse)
-	if !ok {
-		t.Fatalf("payload = %#v, want error response", cooldownRes.Payload)
+	if cooldownRes.Error == nil {
+		t.Fatalf("response = %#v, want error response", cooldownRes)
 	}
-	if !strings.Contains(errorPayload.Message, "cooldown active") {
-		t.Fatalf("error = %q, want cooldown rejection", errorPayload.Message)
+	if !strings.Contains(cooldownRes.Error.Message, "cooldown active") {
+		t.Fatalf("error = %q, want cooldown rejection", cooldownRes.Error.Message)
 	}
 
 	time.Sleep(250 * time.Millisecond)
 
 	retryRes := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
-		Payload: protocol.StartRequest{
+		Start: &protocol.StartRequest{
 			Title:    "second task",
 			Duration: 10 * time.Millisecond,
 		},
@@ -118,11 +116,10 @@ func roundTripRequest(t *testing.T, socketPath string, req protocol.Request) pro
 func assertSuccessMessageContains(t *testing.T, res protocol.Response, want string) {
 	t.Helper()
 
-	successPayload, ok := res.Payload.(protocol.SuccessResponse)
-	if !ok {
-		t.Fatalf("payload = %#v, want success response", res.Payload)
+	if res.Success == nil {
+		t.Fatalf("response = %#v, want success response", res)
 	}
-	if !strings.Contains(successPayload.Message, want) {
-		t.Fatalf("message = %q, want substring %q", successPayload.Message, want)
+	if !strings.Contains(res.Success.Message, want) {
+		t.Fatalf("message = %q, want substring %q", res.Success.Message, want)
 	}
 }

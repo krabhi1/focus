@@ -67,7 +67,7 @@ func main() {
 
 		req := protocol.Request{
 			Command: "start",
-			Payload: protocol.StartRequest{
+			Start: &protocol.StartRequest{
 				Title:    *name,
 				Duration: duration,
 			},
@@ -117,12 +117,12 @@ func SendRequest(conn net.Conn, req protocol.Request) (protocol.Response, error)
 }
 
 func printResponse(res protocol.Response) {
-	switch payload := res.Payload.(type) {
-	case protocol.SuccessResponse:
-		fmt.Println(payload.Message)
-	case protocol.ErrorResponse:
-		fmt.Println(payload.Message)
+	switch {
+	case res.Success != nil:
+		fmt.Println(res.Success.Message)
+	case res.Error != nil:
+		fmt.Println(res.Error.Message)
 	default:
-		fmt.Printf("%s: %+v\n", res.Type, res.Payload)
+		fmt.Printf("%s: empty response\n", res.Type)
 	}
 }
