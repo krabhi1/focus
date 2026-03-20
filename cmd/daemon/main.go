@@ -48,7 +48,7 @@ func main() {
 	}()
 
 	fmt.Println("Go Daemon listening on", socketPath)
-	go state.Get().StartIdleMonitor()
+	go state.Get().StartIdleMonitor(ctx)
 
 	go func() {
 		<-ctx.Done()

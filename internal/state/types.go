@@ -24,6 +24,10 @@ const (
 	BreakWarningOffset       = 2 * time.Minute
 	BreakRelockDelay         = 30 * time.Second
 
+	IdleWarningAfter    = 3 * time.Minute
+	IdleLockAfter       = 5 * time.Minute
+	IdleMonitorInterval = 30 * time.Second
+
 	SocketPath             = "/tmp/focus.sock"
 	TaskLockedWaitDuration = 2 * time.Minute
 )
