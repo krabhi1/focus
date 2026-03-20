@@ -20,10 +20,10 @@ func TestCooldownDurationFor(t *testing.T) {
 		duration time.Duration
 		want     time.Duration
 	}{
-		{name: "short task", duration: 15 * time.Minute, want: BreakDuration},
-		{name: "medium task", duration: 30 * time.Minute, want: BreakDuration},
-		{name: "long task", duration: 60 * time.Minute, want: LongBreakDuration},
-		{name: "deep task", duration: 90 * time.Minute, want: DeepBreakDuration},
+		{name: "short task", duration: 15 * time.Minute, want: ShortCooldownDuration},
+		{name: "medium task", duration: 30 * time.Minute, want: ShortCooldownDuration},
+		{name: "long task", duration: 60 * time.Minute, want: LongCooldownDuration},
+		{name: "deep task", duration: 90 * time.Minute, want: DeepCooldownDuration},
 	}
 
 	for _, tc := range cases {
@@ -42,7 +42,7 @@ func TestBeginCooldownLockedUsesTaskDuration(t *testing.T) {
 
 	s.beginCooldownLocked(task, now)
 
-	want := now.Add(DeepBreakDuration)
+	want := now.Add(DeepCooldownDuration)
 	if !s.cooldownUntil.Equal(want) {
 		t.Fatalf("cooldownUntil = %v, want %v", s.cooldownUntil, want)
 	}

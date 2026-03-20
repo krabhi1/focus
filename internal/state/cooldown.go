@@ -20,11 +20,11 @@ func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
 func cooldownDurationFor(duration time.Duration) time.Duration {
 	switch {
 	case duration >= 90*time.Minute:
-		return DeepBreakDuration
+		return DeepCooldownDuration
 	case duration >= 60*time.Minute:
-		return LongBreakDuration
+		return LongCooldownDuration
 	default:
-		return BreakDuration
+		return ShortCooldownDuration
 	}
 }
 

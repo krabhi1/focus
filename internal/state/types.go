@@ -15,9 +15,9 @@ const (
 	StatusCompleted TaskStatus = "completed"
 	StatusCancelled TaskStatus = "cancelled"
 
-	BreakDuration     = 5 * time.Minute
-	LongBreakDuration = 10 * time.Minute
-	DeepBreakDuration = 15 * time.Minute
+	ShortCooldownDuration = 5 * time.Minute
+	LongCooldownDuration  = 10 * time.Minute
+	DeepCooldownDuration  = 15 * time.Minute
 
 	LongTaskBreakStartOffset = 25 * time.Minute
 	DeepTaskBreakStartOffset = 45 * time.Minute
