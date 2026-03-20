@@ -14,17 +14,7 @@ import (
 )
 
 func TestConnectionStartStatusCooldownFlow(t *testing.T) {
-	restorePolicy := state.SetCooldownDurationPolicyForTest(func(time.Duration) time.Duration {
-		return 200 * time.Millisecond
-	})
-	t.Cleanup(restorePolicy)
-
-	state.Get().ResetForTest()
-	t.Cleanup(state.Get().ResetForTest)
-	state.Get().SetActions(sys.NoopActions{})
-	t.Cleanup(func() {
-		state.Get().SetActions(sys.RealActions{})
-	})
+	st := newTestState(t)
 
 	socketPath := filepath.Join(t.TempDir(), "focus.sock")
 	listener, err := net.Listen("unix", socketPath)
@@ -37,7 +27,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	})
 
 	acceptDone := make(chan struct{})
-	srv := NewServer(state.Get(), sys.NoopActions{})
+	srv := NewServer(st, sys.NoopActions{})
 	go func() {
 		defer close(acceptDone)
 		for {
@@ -107,6 +97,23 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	if !strings.Contains(historyRes.Success.Message, "second task") {
 		t.Fatalf("history = %q, want second task", historyRes.Success.Message)
 	}
+}
+
+func newTestState(t *testing.T) *state.DaemonState {
+	t.Helper()
+
+	st := &state.DaemonState{}
+	st.SetActions(sys.NoopActions{})
+	st.SetCooldownPolicyForTest(func(time.Duration) time.Duration {
+		return 200 * time.Millisecond
+	})
+
+	t.Cleanup(func() {
+		st.SetActions(sys.RealActions{})
+		st.SetCooldownPolicyForTest(nil)
+	})
+
+	return st
 }
 
 func roundTripRequest(t *testing.T, socketPath string, req protocol.Request) protocol.Response {

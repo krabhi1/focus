@@ -19,3 +19,26 @@ The system operates via a background daemon (`focusd`) that handles time trackin
 ## System Requirements
 
 For now this is only available in Linux and tested with cinnamon desktop environment. It should work in other environments as well, but I haven't tested it yet.
+
+## Run
+
+Build everything with:
+
+```bash
+make build
+```
+
+Run the daemon and client from the built binaries:
+
+```bash
+./dist/focusd
+./dist/focus status
+./dist/focus history
+```
+
+Avoid running `go run cmd/daemon/main.go` directly. Use the package path instead if you want to run from source:
+
+```bash
+go run ./cmd/daemon
+go run ./cmd/client status
+```

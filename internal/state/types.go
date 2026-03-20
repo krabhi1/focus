@@ -37,6 +37,7 @@ type DaemonState struct {
 	beforeExpireTimer *time.Timer
 	expireTimer       *time.Timer
 	cooldownUntil     time.Time
+	cooldownPolicy    func(time.Duration) time.Duration
 	isSystemLocked    bool
 	idleSince         time.Time
 	notified          bool

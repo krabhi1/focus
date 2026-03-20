@@ -1,6 +1,9 @@
 package state
 
-import "focus/internal/sys"
+import (
+	"focus/internal/sys"
+	"time"
+)
 
 var global = &DaemonState{
 	taskHistory:    []*Task{},
@@ -33,4 +36,10 @@ func (s *DaemonState) SetActions(actions sys.Actions) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.actions = actions
+}
+
+func (s *DaemonState) SetCooldownPolicyForTest(policy func(time.Duration) time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cooldownPolicy = policy
 }

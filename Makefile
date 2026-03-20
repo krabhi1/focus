@@ -18,6 +18,9 @@ build:
 	@go build -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/daemon
 	@gcc -Wall -Wextra -O2 $(NATIVE_SRC) -o $(DIST_DIR)/$(EVENTS_NAME) $(NATIVE_FLAGS)
 
+run-daemon:
+	@go run ./cmd/daemon
+
 clean:
 	@echo "Cleaning $(DIST_DIR) directory..."
 	@rm -rf $(DIST_DIR)

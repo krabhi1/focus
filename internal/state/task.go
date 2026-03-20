@@ -134,24 +134,3 @@ func (s *DaemonState) History() []Task {
 	}
 	return history
 }
-
-func (s *DaemonState) ResetForTest() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.beforeExpireTimer != nil {
-		s.beforeExpireTimer.Stop()
-		s.beforeExpireTimer = nil
-	}
-	if s.expireTimer != nil {
-		s.expireTimer.Stop()
-		s.expireTimer = nil
-	}
-
-	s.currentTask = nil
-	s.taskHistory = []*Task{}
-	s.cooldownUntil = time.Time{}
-	s.isSystemLocked = false
-	s.idleSince = time.Time{}
-	s.notified = false
-}

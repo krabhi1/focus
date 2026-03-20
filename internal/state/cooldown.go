@@ -2,10 +2,8 @@ package state
 
 import "time"
 
-var cooldownDurationPolicy = cooldownDurationFor
-
 func (s *DaemonState) beginCooldownLocked(task *Task, now time.Time) {
-	s.cooldownUntil = now.Add(cooldownDurationPolicy(task.Duration))
+	s.cooldownUntil = now.Add(s.cooldownDuration(task.Duration))
 }
 
 func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
@@ -30,15 +28,9 @@ func cooldownDurationFor(duration time.Duration) time.Duration {
 	}
 }
 
-func SetCooldownDurationPolicyForTest(policy func(time.Duration) time.Duration) func() {
-	oldPolicy := cooldownDurationPolicy
-	if policy == nil {
-		cooldownDurationPolicy = cooldownDurationFor
-	} else {
-		cooldownDurationPolicy = policy
+func (s *DaemonState) cooldownDuration(duration time.Duration) time.Duration {
+	if s.cooldownPolicy != nil {
+		return s.cooldownPolicy(duration)
 	}
-
-	return func() {
-		cooldownDurationPolicy = oldPolicy
-	}
+	return cooldownDurationFor(duration)
 }
