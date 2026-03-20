@@ -12,15 +12,16 @@ import (
 )
 
 type Server struct {
-	state   *state.DaemonState
-	actions sys.Actions
+	state        *state.DaemonState
+	actions      sys.Actions
+	reloadConfig func() error
 }
 
-func NewServer(st *state.DaemonState, actions sys.Actions) *Server {
+func NewServer(st *state.DaemonState, actions sys.Actions, reloadConfig func() error) *Server {
 	if actions == nil {
 		actions = sys.RealActions{}
 	}
-	return &Server{state: st, actions: actions}
+	return &Server{state: st, actions: actions, reloadConfig: reloadConfig}
 }
 
 func (s *Server) HandleConnection(conn net.Conn) {
@@ -59,6 +60,8 @@ func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 		return s.handleCancel()
 	case "history":
 		return s.handleHistory()
+	case "reload":
+		return s.handleReload()
 	default:
 		fmt.Printf("Unknown command: %s\n", req.Command)
 		return protocol.Response{
@@ -67,6 +70,31 @@ func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 				Message: fmt.Sprintf("Unknown command: %s", req.Command),
 			},
 		}
+	}
+}
+
+func (s *Server) handleReload() protocol.Response {
+	if s.reloadConfig == nil {
+		return protocol.Response{
+			Type: "error",
+			Error: &protocol.ErrorResponse{
+				Message: "reload is not available",
+			},
+		}
+	}
+	if err := s.reloadConfig(); err != nil {
+		return protocol.Response{
+			Type: "error",
+			Error: &protocol.ErrorResponse{
+				Message: fmt.Sprintf("reload failed: %v", err),
+			},
+		}
+	}
+	return protocol.Response{
+		Type: "success",
+		Success: &protocol.SuccessResponse{
+			Message: "Config reloaded.",
+		},
 	}
 }
 

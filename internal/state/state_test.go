@@ -7,7 +7,12 @@ import (
 	"time"
 )
 
-func newTestState() *DaemonState {
+func newTestState(t *testing.T) *DaemonState {
+	t.Helper()
+	if err := SetRuntimeConfig(DefaultRuntimeConfig()); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+
 	return &DaemonState{
 		taskHistory: []*Task{},
 		actions:     sys.NoopActions{},
@@ -28,7 +33,7 @@ func TestCooldownDurationFor(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := cooldownDurationFor(tc.duration); got != tc.want {
+			if got := cooldownDurationFor(tc.duration, GetRuntimeConfig()); got != tc.want {
 				t.Fatalf("cooldownDurationFor(%s) = %s, want %s", tc.duration, got, tc.want)
 			}
 		})
@@ -36,7 +41,7 @@ func TestCooldownDurationFor(t *testing.T) {
 }
 
 func TestBeginCooldownLockedUsesTaskDuration(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
 	task := &Task{Duration: 90 * time.Minute}
 
@@ -49,7 +54,7 @@ func TestBeginCooldownLockedUsesTaskDuration(t *testing.T) {
 }
 
 func TestNewTaskRejectsActiveCooldown(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	s.cooldownUntil = time.Now().Add(10 * time.Minute)
 
 	_, err := s.NewTask("next task", 30*time.Minute)
@@ -62,7 +67,7 @@ func TestNewTaskRejectsActiveCooldown(t *testing.T) {
 }
 
 func TestNewTaskAllowsExpiredCooldown(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	s.cooldownUntil = time.Now().Add(-time.Minute)
 
 	task, err := s.NewTask("next task", 30*time.Minute)
@@ -78,7 +83,7 @@ func TestNewTaskAllowsExpiredCooldown(t *testing.T) {
 }
 
 func TestCancelCurrentTaskDoesNotStartCooldown(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	task := &Task{
 		Title:     "cancel me",
 		Duration:  30 * time.Minute,
@@ -100,7 +105,7 @@ func TestCancelCurrentTaskDoesNotStartCooldown(t *testing.T) {
 }
 
 func TestGetStatusShowsCooldown(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	s.cooldownUntil = time.Now().Add(90 * time.Second)
 
 	status := s.GetStatus()
@@ -113,7 +118,7 @@ func TestGetStatusShowsCooldown(t *testing.T) {
 }
 
 func TestOnScreenUnlockedLocksDuringCooldown(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	actions := &recordingActions{}
 	s.actions = actions
 	s.cooldownUntil = time.Now().Add(2 * time.Minute)
@@ -165,7 +170,7 @@ func TestBreakPlanForDuration(t *testing.T) {
 }
 
 func TestOnScreenUnlockedSchedulesRelockDuringBreak(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	actions := &recordingActions{}
 	s.actions = actions
 	s.currentTask = &Task{
@@ -210,7 +215,7 @@ func TestOnScreenUnlockedSchedulesRelockDuringBreak(t *testing.T) {
 }
 
 func TestNotifyBreakComingUsesWarningOffset(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	actions := &recordingActions{}
 	s.actions = actions
 	s.currentTask = &Task{
@@ -235,7 +240,7 @@ func TestNotifyBreakComingUsesWarningOffset(t *testing.T) {
 }
 
 func TestEndBreakClearsBreakState(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	actions := &recordingActions{}
 	s.actions = actions
 	task := &Task{
@@ -270,7 +275,7 @@ func TestEndBreakClearsBreakState(t *testing.T) {
 }
 
 func TestGetStatusShowsBreakAndRelockCountdown(t *testing.T) {
-	s := newTestState()
+	s := newTestState(t)
 	s.currentTask = &Task{
 		ID:        4,
 		Title:     "deep work",

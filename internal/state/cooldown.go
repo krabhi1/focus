@@ -17,14 +17,14 @@ func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
 	return s.cooldownUntil.Sub(now)
 }
 
-func cooldownDurationFor(duration time.Duration) time.Duration {
+func cooldownDurationFor(duration time.Duration, cfg RuntimeConfig) time.Duration {
 	switch {
 	case duration >= 90*time.Minute:
-		return DeepCooldownDuration
+		return cfg.CooldownDeep
 	case duration >= 60*time.Minute:
-		return LongCooldownDuration
+		return cfg.CooldownLong
 	default:
-		return ShortCooldownDuration
+		return cfg.CooldownShort
 	}
 }
 
@@ -32,5 +32,5 @@ func (s *DaemonState) cooldownDuration(duration time.Duration) time.Duration {
 	if s.cooldownPolicy != nil {
 		return s.cooldownPolicy(duration)
 	}
-	return cooldownDurationFor(duration)
+	return cooldownDurationFor(duration, GetRuntimeConfig())
 }

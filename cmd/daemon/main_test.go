@@ -27,7 +27,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	})
 
 	acceptDone := make(chan struct{})
-	srv := NewServer(st, sys.NoopActions{})
+	srv := NewServer(st, sys.NoopActions{}, nil)
 	go func() {
 		defer close(acceptDone)
 		for {

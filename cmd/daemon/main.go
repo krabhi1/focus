@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"focus/internal/config"
 	"focus/internal/events"
 	"focus/internal/state"
 	"focus/internal/sys"
@@ -13,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 const (
@@ -21,11 +24,24 @@ const (
 )
 
 func main() {
+	opts := parseDaemonOptions()
+
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
-	srv := NewServer(state.Get(), sys.RealActions{})
+
+	socketPath := ""
+	applyConfig := func() error {
+		return loadDaemonConfig(opts)
+	}
+
+	if err := applyConfig(); err != nil {
+		log.Printf("config startup failed: %v", err)
+		return
+	}
+
+	srv := NewServer(state.Get(), sys.RealActions{}, applyConfig)
 
 	listener, err := events.Start(ctx, idleThresholdSeconds, idlePollSeconds)
 	if err != nil {
@@ -35,7 +51,7 @@ func main() {
 		go logHelperErrors(listener.Errors)
 	}
 
-	socketPath := state.SocketPath()
+	socketPath = state.DefaultSocketPath()
 
 	if err := ensureSocketPathAvailable(socketPath); err != nil {
 		log.Printf("socket path setup failed: %v", err)
@@ -71,6 +87,81 @@ func main() {
 
 		go srv.HandleConnection(conn)
 	}
+}
+
+type daemonOptions struct {
+	configPath string
+
+	overrides config.Overrides
+}
+
+func parseDaemonOptions() daemonOptions {
+	var opts daemonOptions
+	fs := flag.NewFlagSet("focusd", flag.ExitOnError)
+	fs.StringVar(&opts.configPath, "config", "", "Path to config JSON (default: $FOCUS_CONFIG or ~/.config/focus/config.json)")
+	opts.overrides.CooldownShort = fs.Duration("cooldown-short", 0, "Override cooldown.short duration")
+	opts.overrides.CooldownLong = fs.Duration("cooldown-long", 0, "Override cooldown.long duration")
+	opts.overrides.CooldownDeep = fs.Duration("cooldown-deep", 0, "Override cooldown.deep duration")
+	opts.overrides.BreakLongStart = fs.Duration("break-long-start", 0, "Override break.long_start duration")
+	opts.overrides.BreakDeepStart = fs.Duration("break-deep-start", 0, "Override break.deep_start duration")
+	opts.overrides.BreakWarning = fs.Duration("break-warning", 0, "Override break.warning duration")
+	opts.overrides.BreakLongDuration = fs.Duration("break-long-duration", 0, "Override break.long_duration duration")
+	opts.overrides.BreakDeepDuration = fs.Duration("break-deep-duration", 0, "Override break.deep_duration duration")
+	opts.overrides.BreakRelockDelay = fs.Duration("break-relock-delay", 0, "Override break.relock_delay duration")
+	opts.overrides.IdleWarnAfter = fs.Duration("idle-warn-after", 0, "Override idle.warn_after duration")
+	opts.overrides.IdleLockAfter = fs.Duration("idle-lock-after", 0, "Override idle.lock_after duration")
+	opts.overrides.IdlePollInterval = fs.Duration("idle-poll-interval", 0, "Override idle.poll_interval duration")
+	_ = fs.Parse(os.Args[1:])
+	normalizeDurationOverrides(&opts.overrides)
+	return opts
+}
+
+func loadDaemonConfig(opts daemonOptions) error {
+	configPath := opts.configPath
+	if configPath == "" {
+		defaultPath, err := config.DefaultPath()
+		if err != nil {
+			return err
+		}
+		configPath = defaultPath
+	}
+
+	fileCfg, _, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+
+	runtimeCfg, err := config.ResolveRuntimeConfig(state.DefaultRuntimeConfig(), fileCfg, opts.overrides)
+	if err != nil {
+		return err
+	}
+	if err := state.SetRuntimeConfig(runtimeCfg); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func normalizeDurationOverrides(overrides *config.Overrides) {
+	normalize := func(value *time.Duration) *time.Duration {
+		if value == nil || *value == 0 {
+			return nil
+		}
+		return value
+	}
+
+	overrides.CooldownShort = normalize(overrides.CooldownShort)
+	overrides.CooldownLong = normalize(overrides.CooldownLong)
+	overrides.CooldownDeep = normalize(overrides.CooldownDeep)
+	overrides.BreakLongStart = normalize(overrides.BreakLongStart)
+	overrides.BreakDeepStart = normalize(overrides.BreakDeepStart)
+	overrides.BreakWarning = normalize(overrides.BreakWarning)
+	overrides.BreakLongDuration = normalize(overrides.BreakLongDuration)
+	overrides.BreakDeepDuration = normalize(overrides.BreakDeepDuration)
+	overrides.BreakRelockDelay = normalize(overrides.BreakRelockDelay)
+	overrides.IdleWarnAfter = normalize(overrides.IdleWarnAfter)
+	overrides.IdleLockAfter = normalize(overrides.IdleLockAfter)
+	overrides.IdlePollInterval = normalize(overrides.IdlePollInterval)
 }
 
 func ensureSocketPathAvailable(path string) error {

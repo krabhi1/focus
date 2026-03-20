@@ -6,7 +6,7 @@ import (
 )
 
 func TestResolveSocketPathUsesXDGRuntimeDir(t *testing.T) {
-	got := resolveSocketPath("", "/tmp/runtime", 1000)
+	got := resolveSocketPath("/tmp/runtime", 1000)
 	want := filepath.Join("/tmp/runtime", "focus", "focus.sock")
 	if got != want {
 		t.Fatalf("resolveSocketPath() = %q, want %q", got, want)
@@ -14,7 +14,7 @@ func TestResolveSocketPathUsesXDGRuntimeDir(t *testing.T) {
 }
 
 func TestResolveSocketPathUsesTmpFallback(t *testing.T) {
-	got := resolveSocketPath("", "", 1001)
+	got := resolveSocketPath("", 1001)
 	want := filepath.Join("/tmp", "focus-1001.sock")
 	if got != want {
 		t.Fatalf("resolveSocketPath() = %q, want %q", got, want)
@@ -22,16 +22,8 @@ func TestResolveSocketPathUsesTmpFallback(t *testing.T) {
 }
 
 func TestResolveSocketPathNegativeUIDFallback(t *testing.T) {
-	got := resolveSocketPath("", "", -1)
+	got := resolveSocketPath("", -1)
 	want := filepath.Join("/tmp", "focus.sock")
-	if got != want {
-		t.Fatalf("resolveSocketPath() = %q, want %q", got, want)
-	}
-}
-
-func TestResolveSocketPathUsesOverride(t *testing.T) {
-	got := resolveSocketPath("/tmp/focus-dev.sock", "/tmp/runtime", 1000)
-	want := "/tmp/focus-dev.sock"
 	if got != want {
 		t.Fatalf("resolveSocketPath() = %q, want %q", got, want)
 	}

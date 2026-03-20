@@ -4,8 +4,8 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	"focus/internal/state"
 	"focus/internal/protocol"
+	"focus/internal/state"
 	"net"
 	"os"
 	"time"
@@ -143,6 +143,23 @@ func main() {
 			return
 		}
 		printResponse(res)
+	case "reload":
+		conn, err := connectDaemon()
+		if err != nil {
+			fmt.Println("Daemon not running.")
+			return
+		}
+		defer conn.Close()
+
+		req := protocol.Request{
+			Command: "reload",
+		}
+		res, err := SendRequest(conn, req)
+		if err != nil {
+			fmt.Println("Error sending request:", err)
+			return
+		}
+		printResponse(res)
 	case "status":
 		conn, err := connectDaemon()
 		if err != nil {
@@ -174,6 +191,7 @@ func printHelp() {
 	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep>")
 	fmt.Println("  focus cancel")
 	fmt.Println("  focus history")
+	fmt.Println("  focus reload")
 	fmt.Println("  focus version")
 	fmt.Println("  focus update [--version <tag>] [--prefix <path>] [--yes]")
 	fmt.Println("  focus uninstall [--prefix <path>]")
@@ -181,7 +199,7 @@ func printHelp() {
 }
 
 func connectDaemon() (net.Conn, error) {
-	return net.Dial("unix", state.SocketPath())
+	return net.Dial("unix", state.DefaultSocketPath())
 }
 
 func SendRequest(conn net.Conn, req protocol.Request) (protocol.Response, error) {

@@ -47,6 +47,7 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 func (s *DaemonState) setupTimers(task *Task) {
 	expireTime := task.StartTime.Add(task.Duration)
 	actions := s.actionsLocked()
+	cfg := GetRuntimeConfig()
 
 	warningTime := time.Until(expireTime.Add(-5 * time.Minute))
 	if warningTime > 0 {
@@ -62,7 +63,7 @@ func (s *DaemonState) setupTimers(task *Task) {
 	})
 
 	if plan, ok := breakPlanForDuration(task.Duration); ok {
-		warnAt := plan.startOffset - BreakWarningOffset
+		warnAt := plan.startOffset - cfg.BreakWarning
 		if warnAt > 0 {
 			s.breakWarnTimer = time.AfterFunc(warnAt, func() {
 				s.notifyBreakComing(task.ID)
@@ -121,7 +122,7 @@ func (s *DaemonState) notifyBreakComing(taskID int) {
 	actions := s.actionsLocked()
 	s.mu.Unlock()
 
-	actions.Notify("Break Reminder", fmt.Sprintf("Break starts in %s for '%s'", BreakWarningOffset, title))
+	actions.Notify("Break Reminder", fmt.Sprintf("Break starts in %s for '%s'", GetRuntimeConfig().BreakWarning, title))
 }
 
 func (s *DaemonState) startBreak(taskID int, breakDuration time.Duration) {
@@ -199,8 +200,9 @@ func (s *DaemonState) OnScreenUnlocked() {
 	if s.breakRelockTimer != nil {
 		s.breakRelockTimer.Stop()
 	}
-	s.breakRelockUntil = now.Add(BreakRelockDelay)
-	s.breakRelockTimer = time.AfterFunc(BreakRelockDelay, func() {
+	relockDelay := GetRuntimeConfig().BreakRelockDelay
+	s.breakRelockUntil = now.Add(relockDelay)
+	s.breakRelockTimer = time.AfterFunc(relockDelay, func() {
 		s.relockIfBreak(taskID)
 	})
 	s.mu.Unlock()
@@ -343,16 +345,18 @@ func (s *DaemonState) actionsLocked() sys.Actions {
 }
 
 func breakPlanForDuration(duration time.Duration) (breakPlan, bool) {
+	cfg := GetRuntimeConfig()
+
 	switch {
 	case duration >= 90*time.Minute:
 		return breakPlan{
-			startOffset: DeepTaskBreakStartOffset,
-			duration:    10 * time.Minute,
+			startOffset: cfg.BreakDeepStart,
+			duration:    cfg.BreakDeepDuration,
 		}, true
 	case duration >= 60*time.Minute:
 		return breakPlan{
-			startOffset: LongTaskBreakStartOffset,
-			duration:    5 * time.Minute,
+			startOffset: cfg.BreakLongStart,
+			duration:    cfg.BreakLongDuration,
 		}, true
 	default:
 		return breakPlan{}, false

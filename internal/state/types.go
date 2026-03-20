@@ -24,9 +24,9 @@ const (
 	BreakWarningOffset       = 2 * time.Minute
 	BreakRelockDelay         = 30 * time.Second
 
-	IdleWarningAfter    = 3 * time.Minute
-	IdleLockAfter       = 5 * time.Minute
-	IdleMonitorInterval = 30 * time.Second
+	IdleWarningAfter    = 30 * time.Second
+	IdleLockAfter       = 60 * time.Second
+	IdleMonitorInterval = 15 * time.Second
 
 	TaskLockedWaitDuration = 2 * time.Minute
 )

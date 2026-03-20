@@ -71,6 +71,7 @@ Run the daemon and client from the built binaries:
 ## Useful Commands
 
 - `focus status` shows the current task, cooldown, or break state.
+- `focus reload` reloads daemon configuration from disk.
 - `focus version` prints the installed binary version.
 - `focus update` upgrades to the latest release.
 - `focus update --version v0.1.4` upgrades to a specific release.
@@ -156,6 +157,50 @@ focus update --prefix /custom/prefix
 ```
 
 Note: release updates currently target `linux/amd64`, matching the published release assets.
+
+## Configuration
+
+Focus can load runtime settings from JSON config:
+
+- Default path: `~/.config/focus/config.json`
+- Override config path: `FOCUS_CONFIG=/path/to/config.json`
+
+Example:
+
+```json
+{
+  "cooldown": {
+    "short": "5m",
+    "long": "10m",
+    "deep": "15m"
+  },
+  "break": {
+    "long_start": "25m",
+    "deep_start": "45m",
+    "warning": "2m",
+    "long_duration": "5m",
+    "deep_duration": "10m",
+    "relock_delay": "30s"
+  },
+  "idle": {
+    "warn_after": "3m",
+    "lock_after": "5m",
+    "poll_interval": "30s"
+  }
+}
+```
+
+Apply changes without restarting daemon:
+
+```bash
+focus reload
+```
+
+Daemon CLI overrides (highest priority):
+
+```bash
+focusd --idle-lock-after 7m --break-warning 90s
+```
 
 Optional install flags:
 

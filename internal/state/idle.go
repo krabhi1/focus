@@ -6,7 +6,8 @@ import (
 )
 
 func (s *DaemonState) StartIdleMonitor(ctx context.Context) {
-	ticker := time.NewTicker(IdleMonitorInterval)
+	cfg := GetRuntimeConfig()
+	ticker := time.NewTicker(cfg.IdlePollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -30,11 +31,12 @@ func (s *DaemonState) StartIdleMonitor(ctx context.Context) {
 
 			elapsed := time.Since(s.idleSince)
 
-			if elapsed >= IdleLockAfter {
+			if elapsed >= cfg.IdleLockAfter {
 				actions.LockScreen()
 				s.idleSince = time.Time{}
-			} else if elapsed >= IdleWarningAfter && !s.notified {
-				actions.Notify("Idle Warning", "No task active. Locking in 2 minute.")
+			} else if elapsed >= cfg.IdleWarnAfter && !s.notified {
+				remaining := (cfg.IdleLockAfter - cfg.IdleWarnAfter).Round(time.Second)
+				actions.Notify("Idle Warning", "No task active. Locking in "+remaining.String()+".")
 				s.notified = true
 			}
 
