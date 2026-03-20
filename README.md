@@ -115,3 +115,48 @@ For private repos, use a token with repo/actions read permissions:
 ```bash
 GITHUB_TOKEN=your_token_here make check-release VERSION=v0.1.0
 ```
+
+## Release workflow
+
+This repo has a tag-triggered GitHub Actions workflow at:
+
+- `.github/workflows/release.yml`
+
+When a tag matching `v*` is pushed (example: `v0.1.1`), the workflow:
+
+1. Builds release artifacts via `scripts/package-release.sh`.
+2. Publishes a GitHub Release.
+3. Uploads `focus_<tag>_linux_amd64.tar.gz`.
+4. Uploads `checksums_<tag>.txt`.
+
+### Cut a release
+
+```bash
+git checkout main
+git pull --ff-only
+git tag v0.1.1
+git push origin main
+git push origin v0.1.1
+```
+
+### Verify release
+
+```bash
+make check-release VERSION=v0.1.1
+```
+
+### Verify installer against released tag
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh -s -- --version v0.1.1 --no-systemd
+```
+
+### Notes
+
+- Current prebuilt target is `linux/amd64`.
+- If tag was pushed by mistake, delete it locally and remotely:
+
+```bash
+git tag -d v0.1.1
+git push origin :refs/tags/v0.1.1
+```
