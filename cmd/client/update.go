@@ -149,10 +149,8 @@ func releaseArch(arch string) (string, error) {
 	switch arch {
 	case "amd64":
 		return "amd64", nil
-	case "arm64":
-		return "arm64", nil
 	default:
-		return "", fmt.Errorf("unsupported architecture: %s", arch)
+		return "", fmt.Errorf("unsupported architecture: %s (linux/amd64 only)", arch)
 	}
 }
 

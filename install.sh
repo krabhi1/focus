@@ -17,6 +17,9 @@ Options:
   --prefix <path>      Install binaries under <path>/bin (default: ~/.local)
   --no-systemd         Skip systemd user service install/enable
   -h, --help           Show help
+
+Current release target:
+  linux/amd64
 EOF
 }
 
@@ -57,14 +60,14 @@ require_cmd() {
 require_cmd curl
 require_cmd tar
 require_cmd sha256sum
+require_cmd install
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch_raw="$(uname -m)"
 case "$arch_raw" in
   x86_64) arch="amd64" ;;
-  aarch64|arm64) arch="arm64" ;;
   *)
-    echo "unsupported architecture: $arch_raw" >&2
+    echo "unsupported architecture: $arch_raw (current releases are linux/amd64 only)" >&2
     exit 1
     ;;
 esac
@@ -105,6 +108,10 @@ curl -fL "$base_url/$checksums" -o "$tmp_dir/$checksums"
 
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 extracted_dir="$tmp_dir/focus_${VERSION}_${os}_${arch}"
+if [[ ! -d "$extracted_dir" ]]; then
+  echo "expected extracted directory not found: $extracted_dir" >&2
+  exit 1
+fi
 
 mkdir -p "$BINDIR"
 install -m 0755 "$extracted_dir/focus" "$BINDIR/focus"
