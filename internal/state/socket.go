@@ -8,10 +8,13 @@ import (
 
 // SocketPath returns the daemon unix socket path for the current user.
 func SocketPath() string {
-	return resolveSocketPath(os.Getenv("XDG_RUNTIME_DIR"), os.Getuid())
+	return resolveSocketPath(os.Getenv("FOCUS_SOCKET_PATH"), os.Getenv("XDG_RUNTIME_DIR"), os.Getuid())
 }
 
-func resolveSocketPath(xdgRuntimeDir string, uid int) string {
+func resolveSocketPath(overridePath string, xdgRuntimeDir string, uid int) string {
+	if overridePath != "" {
+		return overridePath
+	}
 	if xdgRuntimeDir != "" {
 		return filepath.Join(xdgRuntimeDir, "focus", "focus.sock")
 	}
