@@ -96,6 +96,17 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 		},
 	})
 	assertSuccessMessageContains(t, retryRes, "Started task: second task")
+
+	historyRes := roundTripRequest(t, socketPath, protocol.Request{Command: "history"})
+	if historyRes.Success == nil {
+		t.Fatalf("response = %#v, want success response", historyRes)
+	}
+	if !strings.Contains(historyRes.Success.Message, "integration task") {
+		t.Fatalf("history = %q, want first task", historyRes.Success.Message)
+	}
+	if !strings.Contains(historyRes.Success.Message, "second task") {
+		t.Fatalf("history = %q, want second task", historyRes.Success.Message)
+	}
 }
 
 func roundTripRequest(t *testing.T, socketPath string, req protocol.Request) protocol.Response {

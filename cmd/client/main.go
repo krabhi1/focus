@@ -88,6 +88,16 @@ func main() {
 			return
 		}
 		printResponse(res)
+	case "history":
+		req := protocol.Request{
+			Command: "history",
+		}
+		res, err := SendRequest(conn, req)
+		if err != nil {
+			fmt.Println("Error sending request:", err)
+			return
+		}
+		printResponse(res)
 	case "status":
 		req := protocol.Request{
 			Command: "status",

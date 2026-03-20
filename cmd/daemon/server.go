@@ -7,6 +7,8 @@ import (
 	"focus/internal/state"
 	"focus/internal/sys"
 	"net"
+	"strings"
+	"time"
 )
 
 type Server struct {
@@ -55,6 +57,8 @@ func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 		return s.handleStatus()
 	case "cancel":
 		return s.handleCancel()
+	case "history":
+		return s.handleHistory()
 	default:
 		fmt.Printf("Unknown command: %s\n", req.Command)
 		return protocol.Response{
@@ -111,4 +115,39 @@ func (s *Server) handleCancel() protocol.Response {
 			Message: fmt.Sprintf("Cancelled the task: %s", task.Title),
 		},
 	}
+}
+
+func (s *Server) handleHistory() protocol.Response {
+	history := s.state.History()
+	if len(history) == 0 {
+		return protocol.Response{
+			Type: "success",
+			Success: &protocol.SuccessResponse{
+				Message: "No task history",
+			},
+		}
+	}
+
+	lines := make([]string, 0, len(history))
+	for _, task := range history {
+		lines = append(lines, formatHistoryLine(task))
+	}
+
+	return protocol.Response{
+		Type: "success",
+		Success: &protocol.SuccessResponse{
+			Message: strings.Join(lines, "\n"),
+		},
+	}
+}
+
+func formatHistoryLine(task state.Task) string {
+	return fmt.Sprintf(
+		"[%d] %s | %s | %s | started %s",
+		task.ID,
+		task.Title,
+		task.Duration.Round(time.Second),
+		task.Status,
+		task.StartTime.Format(time.RFC3339),
+	)
 }

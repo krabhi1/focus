@@ -121,6 +121,20 @@ func (s *DaemonState) GetStatus() string {
 	return fmt.Sprintf("Task: %s | Remaining: %s", s.currentTask.Title, remaining.Round(time.Second))
 }
 
+func (s *DaemonState) History() []Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	history := make([]Task, 0, len(s.taskHistory))
+	for _, task := range s.taskHistory {
+		if task == nil {
+			continue
+		}
+		history = append(history, *task)
+	}
+	return history
+}
+
 func (s *DaemonState) ResetForTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
