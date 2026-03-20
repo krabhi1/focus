@@ -5,7 +5,7 @@ DIST_DIR=dist
 NATIVE_SRC=native/session_event_listener.c
 NATIVE_FLAGS=$(shell pkg-config --cflags --libs libsystemd x11 xscrnsaver)
 
-.PHONY: all build clean test fmt install uninstall package-release
+.PHONY: all build clean test fmt install uninstall package-release check-release
 
 # Default target
 all: clean build
@@ -47,3 +47,10 @@ package-release:
 		exit 1; \
 	fi
 	@./scripts/package-release.sh --version "$(VERSION)"
+
+check-release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make check-release VERSION=v0.1.0"; \
+		exit 1; \
+	fi
+	@./scripts/check-release.sh --tag "$(VERSION)"

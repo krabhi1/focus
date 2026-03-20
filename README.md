@@ -101,3 +101,17 @@ Optional install flags:
 ```
 
 Current prebuilt release target: `linux/amd64`.
+
+## Verify release publishing
+
+After pushing a version tag, verify workflow + release assets:
+
+```bash
+make check-release VERSION=v0.1.0
+```
+
+For private repos, use a token with repo/actions read permissions:
+
+```bash
+GITHUB_TOKEN=your_token_here make check-release VERSION=v0.1.0
+```
