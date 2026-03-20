@@ -169,13 +169,26 @@ func (s *DaemonState) endBreak(taskID int) {
 
 func (s *DaemonState) OnScreenUnlocked() {
 	s.mu.Lock()
-	if s.currentTask == nil || s.currentTask.Status != StatusBreak {
+	now := time.Now()
+	if s.currentTask == nil {
+		if remaining := s.cooldownRemainingLocked(now); remaining > 0 {
+			actions := s.actionsLocked()
+			s.mu.Unlock()
+			actions.Notify("Cooldown Active", fmt.Sprintf("Cooldown active. Wait %s before starting a new task.", remaining.Round(time.Second)))
+			actions.LockScreen()
+			return
+		}
+		s.mu.Unlock()
+		return
+	}
+
+	if s.currentTask.Status != StatusBreak {
 		s.mu.Unlock()
 		return
 	}
 
 	taskID := s.currentTask.ID
-	breakRemaining := s.breakRemainingLocked(time.Now())
+	breakRemaining := s.breakRemainingLocked(now)
 	if breakRemaining <= 0 {
 		s.mu.Unlock()
 		return
@@ -186,7 +199,7 @@ func (s *DaemonState) OnScreenUnlocked() {
 	if s.breakRelockTimer != nil {
 		s.breakRelockTimer.Stop()
 	}
-	s.breakRelockUntil = time.Now().Add(BreakRelockDelay)
+	s.breakRelockUntil = now.Add(BreakRelockDelay)
 	s.breakRelockTimer = time.AfterFunc(BreakRelockDelay, func() {
 		s.relockIfBreak(taskID)
 	})

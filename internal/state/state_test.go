@@ -112,6 +112,25 @@ func TestGetStatusShowsCooldown(t *testing.T) {
 	}
 }
 
+func TestOnScreenUnlockedLocksDuringCooldown(t *testing.T) {
+	s := newTestState()
+	actions := &recordingActions{}
+	s.actions = actions
+	s.cooldownUntil = time.Now().Add(2 * time.Minute)
+
+	s.OnScreenUnlocked()
+
+	if actions.notifyCount != 1 {
+		t.Fatalf("notifyCount = %d, want 1", actions.notifyCount)
+	}
+	if actions.lastNotifyTitle != "Cooldown Active" {
+		t.Fatalf("last notify title = %q, want %q", actions.lastNotifyTitle, "Cooldown Active")
+	}
+	if actions.lockCount != 1 {
+		t.Fatalf("lockCount = %d, want 1", actions.lockCount)
+	}
+}
+
 func TestBreakPlanForDuration(t *testing.T) {
 	cases := []struct {
 		name         string

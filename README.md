@@ -22,6 +22,32 @@ The system operates via a background daemon (`focusd`) that handles time trackin
 - **Heads-up Notifications:** You’ll receive a notification 5 minutes before a task ends, giving you time to wrap up your work gracefully.
 - **Status Visibility:** `focus status` shows cooldown state, active task remaining time, and break-specific details including relock countdown when applicable.
 
+## State Machine
+
+```mermaid
+flowchart TB
+    Idle(["Idle"])
+    Active(["Active"])
+    Break(["Break"])
+    Cooldown(["Cooldown"])
+    Lock["Lock screen"]
+
+    Idle -- focus start --> Active
+    Active -- long/deep break time --> Break
+    Break -- break ends --> Active
+
+    Active -- task completes --> Cooldown
+    Cooldown -- cooldown ends --> Idle
+
+    Active -- cancel in grace period --> Idle
+
+    Idle -- no task for 5m --> Lock
+    Break -- unlock during break --> Lock
+    Cooldown -- unlock during cooldown --> Lock
+```
+
+`Idle` means no task is running and no cooldown is active. `Break` only applies to long and deep tasks. Cooldown is hard: if the user unlocks during cooldown, Focus locks the screen again. Screen locking is an action, not a separate state.
+
 ## System Requirements
 
 For now this is only available in Linux and tested with cinnamon desktop environment. It should work in other environments as well, but I haven't tested it yet.
@@ -41,6 +67,15 @@ Run the daemon and client from the built binaries:
 ./dist/focus status
 ./dist/focus history
 ```
+
+## Useful Commands
+
+- `focus status` shows the current task, cooldown, or break state.
+- `focus version` prints the installed binary version.
+- `focus update` upgrades to the latest release.
+- `focus update --version v0.1.4` upgrades to a specific release.
+- `focus uninstall` removes the installed binaries and user service.
+- `systemctl --user status focusd.service` checks whether the daemon service is running.
 
 Avoid running `go run cmd/daemon/main.go` directly. Use the package path instead if you want to run from source:
 
