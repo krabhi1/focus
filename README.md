@@ -48,3 +48,38 @@ Avoid running `go run cmd/daemon/main.go` directly. Use the package path instead
 go run ./cmd/daemon
 go run ./cmd/client status
 ```
+
+## Install (user systemd service)
+
+Install binaries and enable a user-level systemd service:
+
+```bash
+./scripts/install.sh
+```
+
+This installs:
+
+- `focus`, `focusd`, and `focus-events` to `~/.local/bin` (by default)
+- `focusd.service` to `~/.config/systemd/user/focusd.service`
+
+Manage service manually if needed:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now focusd.service
+systemctl --user status focusd.service
+```
+
+Uninstall:
+
+```bash
+./scripts/uninstall.sh
+```
+
+Optional install flags:
+
+```bash
+./scripts/install.sh --prefix /custom/prefix
+./scripts/install.sh --no-build
+./scripts/install.sh --no-systemd
+```

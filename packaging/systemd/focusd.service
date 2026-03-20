@@ -1,0 +1,16 @@
+[Unit]
+Description=Focus daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@BINDIR@/focusd
+WorkingDirectory=%h
+Environment=PATH=@BINDIR@:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

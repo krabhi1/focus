@@ -5,7 +5,7 @@ DIST_DIR=dist
 NATIVE_SRC=native/session_event_listener.c
 NATIVE_FLAGS=$(shell pkg-config --cflags --libs libsystemd x11 xscrnsaver)
 
-.PHONY: all build clean test fmt
+.PHONY: all build clean test fmt install uninstall
 
 # Default target
 all: clean build
@@ -34,3 +34,9 @@ fmt:
 	@echo "Formatting files..."
 	@go fmt ./...
 	@clang-format -i $(NATIVE_SRC)
+
+install:
+	@./scripts/install.sh
+
+uninstall:
+	@./scripts/uninstall.sh
