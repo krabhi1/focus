@@ -270,7 +270,10 @@ func extractReleaseArchive(archivePath, destDir string) error {
 			return fmt.Errorf("read archive: %w", err)
 		}
 
-		target := filepath.Join(destDir, header.Name)
+		target, err := safeArchiveTarget(destDir, header.Name)
+		if err != nil {
+			return err
+		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
@@ -291,6 +294,8 @@ func extractReleaseArchive(archivePath, destDir string) error {
 			if err := out.Close(); err != nil {
 				return fmt.Errorf("close file %s: %w", target, err)
 			}
+		case tar.TypeSymlink, tar.TypeLink:
+			return fmt.Errorf("unsupported archive entry type for %s", header.Name)
 		}
 	}
 }
@@ -301,6 +306,7 @@ func installReleaseBinaries(stageDir, bindir string) error {
 		return fmt.Errorf("create binary dir: %w", err)
 	}
 
+	staged := make(map[string]string, len(files))
 	for _, name := range files {
 		src := filepath.Join(stageDir, name)
 		if _, err := os.Stat(src); err != nil {
@@ -308,40 +314,132 @@ func installReleaseBinaries(stageDir, bindir string) error {
 		}
 
 		dest := filepath.Join(bindir, name)
-		if err := atomicReplaceFile(src, dest, 0o755); err != nil {
+		tmpDest, err := copyToTempInDir(src, filepath.Dir(dest), "."+filepath.Base(dest)+".new.", 0o755)
+		if err != nil {
 			return err
 		}
+		staged[name] = tmpDest
 	}
+
+	replaced := make([]string, 0, len(files))
+	backups := map[string]string{}
+
+	rollback := func() {
+		for _, name := range replaced {
+			dest := filepath.Join(bindir, name)
+			if backup, ok := backups[name]; ok {
+				_ = os.Remove(dest)
+				_ = os.Rename(backup, dest)
+			}
+		}
+		for _, path := range backups {
+			_ = os.Remove(path)
+		}
+		for _, path := range staged {
+			_ = os.Remove(path)
+		}
+	}
+
+	for _, name := range files {
+		dest := filepath.Join(bindir, name)
+		if _, err := os.Stat(dest); err == nil {
+			backup, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".bak.")
+			if err != nil {
+				rollback()
+				return fmt.Errorf("create backup placeholder for %s: %w", dest, err)
+			}
+			backupPath := backup.Name()
+			if err := backup.Close(); err != nil {
+				rollback()
+				return fmt.Errorf("close backup placeholder for %s: %w", dest, err)
+			}
+			_ = os.Remove(backupPath)
+			if err := os.Rename(dest, backupPath); err != nil {
+				rollback()
+				return fmt.Errorf("backup %s: %w", dest, err)
+			}
+			backups[name] = backupPath
+		}
+
+		if err := os.Rename(staged[name], dest); err != nil {
+			rollback()
+			return fmt.Errorf("replace %s: %w", dest, err)
+		}
+		replaced = append(replaced, name)
+		delete(staged, name)
+	}
+
+	for _, backup := range backups {
+		_ = os.Remove(backup)
+	}
+	for _, path := range staged {
+		_ = os.Remove(path)
+	}
+
 	return nil
 }
 
-func atomicReplaceFile(src, dest string, mode os.FileMode) error {
+func copyToTempInDir(src, dir, pattern string, mode os.FileMode) (string, error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", src, err)
+		return "", fmt.Errorf("open %s: %w", src, err)
 	}
 	defer in.Close()
 
-	tmp, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".*")
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
-		return fmt.Errorf("create temp file for %s: %w", dest, err)
+		return "", fmt.Errorf("create temp file in %s: %w", dir, err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
 
 	if _, err := io.Copy(tmp, in); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("copy %s: %w", src, err)
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("copy %s: %w", src, err)
 	}
 	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("chmod temp %s: %w", tmpPath, err)
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("chmod temp %s: %w", tmpPath, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp %s: %w", tmpPath, err)
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("close temp %s: %w", tmpPath, err)
 	}
-	if err := os.Rename(tmpPath, dest); err != nil {
-		return fmt.Errorf("replace %s: %w", dest, err)
+
+	return tmpPath, nil
+}
+
+func safeArchiveTarget(destDir, entryName string) (string, error) {
+	clean := filepath.Clean(entryName)
+	if clean == "." || clean == "" {
+		return "", fmt.Errorf("invalid archive entry name %q", entryName)
+	}
+	if filepath.IsAbs(clean) {
+		return "", fmt.Errorf("absolute archive entry path not allowed: %q", entryName)
+	}
+
+	target := filepath.Join(destDir, clean)
+	rel, err := filepath.Rel(destDir, target)
+	if err != nil {
+		return "", fmt.Errorf("resolve archive path for %q: %w", entryName, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("archive entry escapes destination: %q", entryName)
+	}
+
+	return target, nil
+}
+
+func runSystemctl(args ...string) error {
+	cmd := exec.Command("systemctl", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(output))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("systemctl %s failed: %s", strings.Join(args, " "), msg)
 	}
 	return nil
 }
@@ -371,11 +469,17 @@ func updateServiceIfPresent(bindir string) error {
 
 	active := exec.Command("systemctl", "--user", "is-active", "--quiet", "focusd.service").Run() == nil
 	if active {
-		_ = exec.Command("systemctl", "--user", "stop", "focusd.service").Run()
+		if err := runSystemctl("--user", "stop", "focusd.service"); err != nil {
+			return err
+		}
 	}
-	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+	if err := runSystemctl("--user", "daemon-reload"); err != nil {
+		return err
+	}
 	if active {
-		_ = exec.Command("systemctl", "--user", "start", "focusd.service").Run()
+		if err := runSystemctl("--user", "start", "focusd.service"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

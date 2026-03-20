@@ -1,8 +1,12 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,27 +46,66 @@ func TestVerifyReleaseChecksumAcceptsDotSlashEntry(t *testing.T) {
 	}
 }
 
-func TestAtomicReplaceFile(t *testing.T) {
+func TestCopyToTempInDir(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
-	dest := filepath.Join(dir, "dest")
 
 	if err := os.WriteFile(src, []byte("new"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dest, []byte("old"), 0o755); err != nil {
-		t.Fatal(err)
+	tmp, err := copyToTempInDir(src, dir, ".dest.new.", 0o755)
+	if err != nil {
+		t.Fatalf("copyToTempInDir returned error: %v", err)
 	}
+	defer os.Remove(tmp)
 
-	if err := atomicReplaceFile(src, dest, 0o755); err != nil {
-		t.Fatalf("atomicReplaceFile returned error: %v", err)
-	}
-
-	data, err := os.ReadFile(dest)
+	data, err := os.ReadFile(tmp)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(string(data)) != "new" {
-		t.Fatalf("dest contents = %q, want new", string(data))
+		t.Fatalf("temp contents = %q, want new", string(data))
+	}
+}
+
+func TestSafeArchiveTargetRejectsEscape(t *testing.T) {
+	dest := t.TempDir()
+
+	_, err := safeArchiveTarget(dest, "../../etc/passwd")
+	if err == nil {
+		t.Fatal("expected escape path to be rejected")
+	}
+}
+
+func TestExtractReleaseArchiveRejectsEscapeEntry(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "bad.tar.gz")
+
+	var buf bytes.Buffer
+	gzw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gzw)
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "../../escape",
+		Mode: 0o644,
+		Size: int64(len("x")),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(tw, "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archivePath, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := extractReleaseArchive(archivePath, filepath.Join(dir, "out"))
+	if err == nil {
+		t.Fatal("expected extraction to fail for escape entry")
 	}
 }
