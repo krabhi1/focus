@@ -95,7 +95,11 @@ curl -fL "$base_url/$checksums" -o "$tmp_dir/$checksums"
 
 (
   cd "$tmp_dir"
-  grep " ${asset}$" "$checksums" > "${asset}.sha256"
+  awk -v a="$asset" '$2 == a || $2 == ("./" a)' "$checksums" > "${asset}.sha256"
+  if [[ ! -s "${asset}.sha256" ]]; then
+    echo "checksum entry for $asset not found in $checksums" >&2
+    exit 1
+  fi
   sha256sum -c "${asset}.sha256"
 )
 
