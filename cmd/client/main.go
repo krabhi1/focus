@@ -46,6 +46,9 @@ func main() {
 	case "version":
 		printVersion()
 		return
+	case "doctor":
+		runDoctor()
+		return
 	case "uninstall":
 		uninstallCmd := flag.NewFlagSet("uninstall", flag.ExitOnError)
 		prefix := uninstallCmd.String("prefix", "", "Install prefix (defaults to the current binary directory)")
@@ -192,6 +195,7 @@ func printHelp() {
 	fmt.Println("  focus cancel")
 	fmt.Println("  focus history")
 	fmt.Println("  focus reload")
+	fmt.Println("  focus doctor")
 	fmt.Println("  focus version")
 	fmt.Println("  focus update [--version <tag>] [--prefix <path>] [--yes]")
 	fmt.Println("  focus uninstall [--prefix <path>]")

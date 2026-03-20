@@ -84,6 +84,7 @@ Run the daemon and client from the built binaries:
 
 - `focus status` shows the current task, cooldown, or break state.
 - `focus reload` reloads daemon configuration from disk.
+- `focus doctor` prints dependency, socket, daemon IPC, and service health checks.
 - `focus version` prints the installed binary version.
 - `focus update` upgrades to the latest release.
 - `focus update --version v0.1.4` upgrades to a specific release.
