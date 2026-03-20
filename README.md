@@ -51,7 +51,23 @@ go run ./cmd/client status
 
 ## Install (user systemd service)
 
-Install binaries and enable a user-level systemd service:
+Install latest release (GitHub):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh -s -- --version v0.1.0
+```
+
+Manual (recommended for audit): download `install.sh`, review it, then run it.
+
+Install from local source checkout:
+
+Build/install binaries and enable a user-level systemd service:
 
 ```bash
 ./scripts/install.sh
@@ -83,3 +99,5 @@ Optional install flags:
 ./scripts/install.sh --no-build
 ./scripts/install.sh --no-systemd
 ```
+
+Current prebuilt release target: `linux/amd64`.

@@ -1,0 +1,39 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libsystemd-dev libx11-dev libxss-dev
+
+      - name: Build release artifacts
+        run: |
+          chmod +x scripts/package-release.sh
+          ./scripts/package-release.sh --version "${GITHUB_REF_NAME}" --targets "linux/amd64"
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*.tar.gz
+            release-artifacts/checksums_*.txt
