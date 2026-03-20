@@ -36,13 +36,17 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 
 func (s *DaemonState) setupTimers(task *Task) {
 	expireTime := task.StartTime.Add(task.Duration)
+	actions := s.actions
+	if actions == nil {
+		actions = sys.RealActions{}
+	}
 
 	warningTime := time.Until(expireTime.Add(-5 * time.Minute))
 	if warningTime > 0 {
 		s.beforeExpireTimer = time.AfterFunc(warningTime, func() {
-			sys.Notify("Task expiring soon", fmt.Sprintf("'%s' ends in 5m", task.Title))
+			actions.Notify("Task expiring soon", fmt.Sprintf("'%s' ends in 5m", task.Title))
 			time.Sleep(2 * time.Second)
-			sys.PlaySound("assets/task-ending.mp3")
+			actions.PlaySound("assets/task-ending.mp3")
 		})
 	}
 
@@ -80,10 +84,14 @@ func (s *DaemonState) completeCurrentTask(title string) {
 	task := s.currentTask
 	task.Status = StatusCompleted
 	s.beginCooldownLocked(task, time.Now())
+	actions := s.actions
+	if actions == nil {
+		actions = sys.RealActions{}
+	}
 	s.cleanupTask()
 	s.mu.Unlock()
 
-	sys.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", title))
+	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", title))
 	time.Sleep(5 * time.Second)
 }
 

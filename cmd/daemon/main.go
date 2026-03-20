@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"focus/internal/events"
 	"focus/internal/state"
+	"focus/internal/sys"
 	"log"
 	"net"
 	"os"
@@ -20,7 +21,7 @@ const (
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := NewServer(state.Get())
+	srv := NewServer(state.Get(), sys.RealActions{})
 
 	// Cleanup socket on exit
 	c := make(chan os.Signal, 1)

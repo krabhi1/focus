@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"focus/internal/protocol"
 	"focus/internal/state"
+	"focus/internal/sys"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,6 +21,10 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 
 	state.Get().ResetForTest()
 	t.Cleanup(state.Get().ResetForTest)
+	state.Get().SetActions(sys.NoopActions{})
+	t.Cleanup(func() {
+		state.Get().SetActions(sys.RealActions{})
+	})
 
 	socketPath := filepath.Join(t.TempDir(), "focus.sock")
 	listener, err := net.Listen("unix", socketPath)
@@ -32,7 +37,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	})
 
 	acceptDone := make(chan struct{})
-	srv := NewServer(state.Get())
+	srv := NewServer(state.Get(), sys.NoopActions{})
 	go func() {
 		defer close(acceptDone)
 		for {

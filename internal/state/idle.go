@@ -9,6 +9,10 @@ func (s *DaemonState) StartIdleMonitor() {
 	ticker := time.NewTicker(30 * time.Second)
 	for range ticker.C {
 		s.mu.Lock()
+		actions := s.actions
+		if actions == nil {
+			actions = sys.RealActions{}
+		}
 
 		if s.currentTask != nil || s.isSystemLocked {
 			s.idleSince = time.Time{}
@@ -24,10 +28,10 @@ func (s *DaemonState) StartIdleMonitor() {
 		elapsed := time.Since(s.idleSince)
 
 		if elapsed >= 5*time.Minute {
-			sys.LockScreen()
+			actions.LockScreen()
 			s.idleSince = time.Time{}
 		} else if elapsed >= 3*time.Minute && !s.notified {
-			sys.Notify("Idle Warning", "No task active. Locking in 2 minute.")
+			actions.Notify("Idle Warning", "No task active. Locking in 2 minute.")
 			s.notified = true
 		}
 

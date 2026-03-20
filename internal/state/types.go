@@ -3,6 +3,8 @@ package state
 import (
 	"sync"
 	"time"
+
+	"focus/internal/sys"
 )
 
 type TaskStatus string
@@ -38,4 +40,5 @@ type DaemonState struct {
 	isSystemLocked    bool
 	idleSince         time.Time
 	notified          bool
+	actions           sys.Actions
 }

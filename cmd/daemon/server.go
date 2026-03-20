@@ -10,11 +10,15 @@ import (
 )
 
 type Server struct {
-	state *state.DaemonState
+	state   *state.DaemonState
+	actions sys.Actions
 }
 
-func NewServer(st *state.DaemonState) *Server {
-	return &Server{state: st}
+func NewServer(st *state.DaemonState, actions sys.Actions) *Server {
+	if actions == nil {
+		actions = sys.RealActions{}
+	}
+	return &Server{state: st, actions: actions}
 }
 
 func (s *Server) HandleConnection(conn net.Conn) {
@@ -72,7 +76,7 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 			},
 		}
 	}
-	sys.Notify("Task Started", fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration))
+	s.actions.Notify("Task Started", fmt.Sprintf("Started task: %s for %s", task.Title, task.Duration))
 	return protocol.Response{
 		Type: "success",
 		Success: &protocol.SuccessResponse{
@@ -100,7 +104,7 @@ func (s *Server) handleCancel() protocol.Response {
 			},
 		}
 	}
-	sys.Notify("Task Cancelled", fmt.Sprintf("Cancelled the task: %s", task.Title))
+	s.actions.Notify("Task Cancelled", fmt.Sprintf("Cancelled the task: %s", task.Title))
 	return protocol.Response{
 		Type: "success",
 		Success: &protocol.SuccessResponse{
