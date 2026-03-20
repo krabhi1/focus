@@ -20,18 +20,11 @@ const (
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(sigCtx)
+	defer cancel()
 	srv := NewServer(state.Get(), sys.RealActions{})
-
-	// Cleanup socket on exit
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		cancel()
-		os.Remove(socketPath)
-		os.Exit(0)
-	}()
 
 	listener, err := events.Start(ctx, idleThresholdSeconds, idlePollSeconds)
 	if err != nil {
@@ -49,14 +42,25 @@ func main() {
 		fmt.Printf("Listen error: %v\n", err)
 		return
 	}
-	defer l.Close()
+	defer func() {
+		_ = l.Close()
+		_ = os.Remove(socketPath)
+	}()
 
 	fmt.Println("Go Daemon listening on", socketPath)
 	go state.Get().StartIdleMonitor()
 
+	go func() {
+		<-ctx.Done()
+		_ = l.Close()
+	}()
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			continue
 		}
 
