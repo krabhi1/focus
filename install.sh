@@ -142,6 +142,8 @@ cat > "$service_file" <<EOF
 Description=Focus daemon
 After=graphical-session.target
 PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -153,7 +155,7 @@ RestartSec=2
 NoNewPrivileges=true
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 EOF
 
 if systemctl --user daemon-reload && systemctl --user enable --now focusd.service; then

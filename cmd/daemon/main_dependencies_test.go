@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWarnMissingRuntimeDependencies(t *testing.T) {
@@ -42,5 +43,45 @@ func TestWarnMissingRuntimeDependencies(t *testing.T) {
 	}
 	if strings.Contains(got, "paplay") {
 		t.Fatalf("log output = %q, did not expect warning for paplay", got)
+	}
+}
+
+func TestIsHelperFatalError(t *testing.T) {
+	if !isHelperFatalError(errors.New("focus-events exited: exit status 1")) {
+		t.Fatal("expected helper exit error to be fatal")
+	}
+	if isHelperFatalError(errors.New("read helper stdout: frame parse failed")) {
+		t.Fatal("expected non-exit error to be non-fatal")
+	}
+	if isHelperFatalError(nil) {
+		t.Fatal("expected nil error to be non-fatal")
+	}
+}
+
+func TestMonitorHelperErrorsCancelsOnFatal(t *testing.T) {
+	errCh := make(chan error, 2)
+	helperFatal := make(chan error, 1)
+	cancelled := false
+	cancel := func() {
+		cancelled = true
+	}
+
+	go monitorHelperErrors(errCh, cancel, helperFatal)
+
+	errCh <- errors.New("frame decode failed")
+	errCh <- errors.New("focus-events exited: exit status 1")
+	close(errCh)
+
+	select {
+	case err := <-helperFatal:
+		if err == nil || !strings.Contains(err.Error(), "focus-events exited") {
+			t.Fatalf("unexpected helper fatal error: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for helper fatal error")
+	}
+
+	if !cancelled {
+		t.Fatal("expected cancel to be called for fatal helper error")
 	}
 }

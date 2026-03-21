@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -25,6 +26,13 @@ const (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Printf("fatal: %v", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	opts := parseDaemonOptions()
 
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -38,8 +46,7 @@ func main() {
 	}
 
 	if err := applyConfig(); err != nil {
-		log.Printf("config startup failed: %v", err)
-		return
+		return fmt.Errorf("config startup failed: %w", err)
 	}
 	warnMissingRuntimeDependencies(exec.LookPath)
 
@@ -47,23 +54,21 @@ func main() {
 
 	listener, err := events.Start(ctx, idleThresholdSeconds, idlePollSeconds)
 	if err != nil {
-		log.Printf("focus-events startup failed: %v", err)
-	} else {
-		go consumeHelperEvents(listener.Events)
-		go logHelperErrors(listener.Errors)
+		return fmt.Errorf("focus-events startup failed: %w", err)
 	}
+	go consumeHelperEvents(listener.Events)
+	helperFatal := make(chan error, 1)
+	go monitorHelperErrors(listener.Errors, cancel, helperFatal)
 
 	socketPath = state.DefaultSocketPath()
 
 	if err := ensureSocketPathAvailable(socketPath); err != nil {
-		log.Printf("socket path setup failed: %v", err)
-		return
+		return fmt.Errorf("socket path setup failed: %w", err)
 	}
 
 	l, err := net.Listen("unix", socketPath)
 	if err != nil {
-		fmt.Printf("Listen error: %v\n", err)
-		return
+		return fmt.Errorf("listen error: %w", err)
 	}
 	defer func() {
 		_ = l.Close()
@@ -82,12 +87,19 @@ func main() {
 		conn, err := l.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				return
+				break
 			}
 			continue
 		}
 
 		go srv.HandleConnection(conn)
+	}
+
+	select {
+	case err := <-helperFatal:
+		return err
+	default:
+		return nil
 	}
 }
 
@@ -205,12 +217,28 @@ func consumeHelperEvents(eventCh <-chan events.Event) {
 	}
 }
 
-func logHelperErrors(errCh <-chan error) {
+func monitorHelperErrors(errCh <-chan error, cancel context.CancelFunc, helperFatal chan<- error) {
 	for err := range errCh {
-		if err != nil {
-			log.Printf("focus-events error: %v", err)
+		if err == nil {
+			continue
+		}
+		log.Printf("focus-events error: %v", err)
+		if isHelperFatalError(err) {
+			cancel()
+			select {
+			case helperFatal <- err:
+			default:
+			}
+			return
 		}
 	}
+}
+
+func isHelperFatalError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "focus-events exited")
 }
 
 func warnMissingRuntimeDependencies(lookPath func(string) (string, error)) {
