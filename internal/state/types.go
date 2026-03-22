@@ -1,10 +1,7 @@
 package state
 
 import (
-	"sync"
 	"time"
-
-	"focus/internal/sys"
 )
 
 type TaskStatus string
@@ -36,31 +33,4 @@ type Task struct {
 	Duration  time.Duration
 	StartTime time.Time
 	Status    TaskStatus
-}
-
-type DaemonState struct {
-	mu                  sync.Mutex
-	currentTask         *Task
-	taskHistory         []*Task
-	beforeExpireTimer   *time.Timer
-	expireTimer         *time.Timer
-	breakWarnTimer      *time.Timer
-	breakStartTimer     *time.Timer
-	breakEndTimer       *time.Timer
-	breakRelockTimer    *time.Timer
-	cooldownStartTimer  *time.Timer
-	cooldownTimer       *time.Timer
-	idleWarnTimer       *time.Timer
-	idleLockTimer       *time.Timer
-	completionAlertStop chan struct{}
-	breakRelockUntil    time.Time
-	breakUntil          time.Time
-	cooldownStartUntil  time.Time
-	cooldownUntil       time.Time
-	cooldownPolicy      func(time.Duration) time.Duration
-	isSystemLocked      bool
-	idleActive          bool
-	idleSince           time.Time
-	notified            bool
-	actions             sys.Actions
 }

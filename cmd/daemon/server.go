@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
+	"focus/internal/core"
 	"focus/internal/protocol"
 	"focus/internal/state"
 	"focus/internal/sys"
@@ -12,16 +13,21 @@ import (
 )
 
 type Server struct {
-	state        *state.DaemonState
-	actions      sys.Actions
-	reloadConfig func() error
+	runtime        *DaemonRuntime
+	actions        sys.Actions
+	reloadConfig   func() error
+	statusProvider func() string
 }
 
-func NewServer(st *state.DaemonState, actions sys.Actions, reloadConfig func() error) *Server {
+func NewServer(rt *DaemonRuntime, actions sys.Actions, reloadConfig func() error) *Server {
 	if actions == nil {
 		actions = sys.RealActions{}
 	}
-	return &Server{state: st, actions: actions, reloadConfig: reloadConfig}
+	return &Server{runtime: rt, actions: actions, reloadConfig: reloadConfig}
+}
+
+func (s *Server) SetStatusProvider(fn func() string) {
+	s.statusProvider = fn
 }
 
 func (s *Server) HandleConnection(conn net.Conn) {
@@ -121,7 +127,7 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 		}
 	}
 
-	task, err := s.state.NewTask(req.Title, duration)
+	task, err := s.runtime.StartTask(req.Title, duration)
 	if err != nil {
 		return protocol.Response{
 			Type: "error",
@@ -139,17 +145,43 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 	}
 }
 
+func startDecisionFromCore(snapshot core.State) error {
+	switch snapshot.Phase {
+	case core.PhaseIdle:
+		return nil
+	case core.PhasePendingCooldown, core.PhaseCooldown:
+		return fmt.Errorf("cooldown active, wait before creating a new task")
+	case core.PhaseBreak:
+		return fmt.Errorf("break active, wait before creating a new task")
+	default:
+		return fmt.Errorf("a task is already active")
+	}
+}
+
 func (s *Server) handleStatus() protocol.Response {
+	message := s.runtime.Status()
+	if s.statusProvider != nil {
+		message = s.statusProvider()
+	}
 	return protocol.Response{
 		Type: "success",
 		Success: &protocol.SuccessResponse{
-			Message: s.state.GetStatus(),
+			Message: message,
 		},
 	}
 }
 
 func (s *Server) handleCancel() protocol.Response {
-	task, err := s.state.CancelCurrentTask()
+	if err := cancelDecisionFromCore(s.runtime.CoreSnapshot()); err != nil {
+		return protocol.Response{
+			Type: "error",
+			Error: &protocol.ErrorResponse{
+				Message: fmt.Sprintf("Failed to cancel task: %v", err),
+			},
+		}
+	}
+
+	task, err := s.runtime.CancelCurrentTask()
 	if err != nil {
 		return protocol.Response{
 			Type: "error",
@@ -167,8 +199,20 @@ func (s *Server) handleCancel() protocol.Response {
 	}
 }
 
+func cancelDecisionFromCore(snapshot core.State) error {
+	switch snapshot.Phase {
+	case core.PhaseIdle:
+		return fmt.Errorf("no active task to cancel")
+	case core.PhasePendingCooldown, core.PhaseCooldown:
+		return fmt.Errorf("no active task to cancel")
+	default:
+		// Active/Break are allowed here; legacy path still enforces grace-period lock.
+		return nil
+	}
+}
+
 func (s *Server) handleHistory() protocol.Response {
-	history := s.state.History()
+	history := s.runtime.History()
 	if len(history) == 0 {
 		return protocol.Response{
 			Type: "success",

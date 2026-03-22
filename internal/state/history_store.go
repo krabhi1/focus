@@ -16,6 +16,15 @@ func DefaultHistoryPath() (string, error) {
 	return historyFilePath()
 }
 
+func LoadTodayHistory() ([]Task, error) {
+	return loadTodayHistoryFromLog()
+}
+
+func AppendCompletedTask(task Task) error {
+	taskCopy := task
+	return appendCompletedTaskToLog(&taskCopy)
+}
+
 func historyFilePath() (string, error) {
 	if path := os.Getenv(historyFileEnv); path != "" {
 		return path, nil

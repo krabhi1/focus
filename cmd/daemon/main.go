@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"focus/internal/config"
+	"focus/internal/core"
 	"focus/internal/events"
 	"focus/internal/state"
 	"focus/internal/sys"
@@ -44,7 +45,13 @@ func run() error {
 	}
 	warnMissingRuntimeDependencies(exec.LookPath)
 
-	srv := NewServer(state.Get(), sys.RealActions{}, applyConfig)
+	rt := NewDaemonRuntime(sys.RealActions{})
+	defer rt.Close()
+	srv := NewServer(rt, sys.RealActions{}, applyConfig)
+	srv.SetStatusProvider(func() string {
+		return formatCoreStatus(rt.CoreSnapshot())
+	})
+
 	configPath, err := resolvedConfigPath(opts)
 	if err != nil {
 		return err
@@ -56,7 +63,7 @@ func run() error {
 	}
 	log.Printf("paths config=%s socket=%s history=%s", configPath, socketPath, historyPath)
 
-	if err := state.LoadHistoryFromDisk(); err != nil {
+	if err := rt.LoadHistoryFromDisk(); err != nil {
 		log.Printf("warning: failed to load persisted history: %v", err)
 	}
 
@@ -65,7 +72,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("focus-events startup failed: %w", err)
 	}
-	go consumeHelperEvents(listener.Events)
+	go consumeHelperEvents(listener.Events, rt)
 	helperFatal := make(chan error, 1)
 	go monitorHelperErrors(listener.Errors, cancel, helperFatal)
 
@@ -221,27 +228,59 @@ func ensureSocketPathAvailable(path string) error {
 	return nil
 }
 
-func consumeHelperEvents(eventCh <-chan events.Event) {
+func consumeHelperEvents(eventCh <-chan events.Event, runtime *DaemonRuntime) {
 	for event := range eventCh {
 		switch event.Kind {
 		case events.KindIdle:
 			switch event.State {
 			case "entered":
-				state.Get().OnIdleEntered()
+				runtime.OnIdleEntered()
+				runtime.core.Publish(core.Event{Type: core.EventIdleEntered, At: time.Now()})
 			case "exited":
-				state.Get().OnIdleExited()
+				runtime.OnIdleExited()
+				runtime.core.Publish(core.Event{Type: core.EventIdleExited, At: time.Now()})
 			}
 		case events.KindScreen:
 			switch event.State {
 			case "locked":
-				state.Get().SetSystemLocked(true)
-				state.Get().OnScreenLocked()
+				runtime.SetSystemLocked(true)
+				runtime.OnScreenLocked()
+				runtime.core.Publish(core.Event{Type: core.EventScreenLocked, At: time.Now()})
 			case "unlocked":
-				state.Get().SetSystemLocked(false)
-				state.Get().OnScreenUnlocked()
+				runtime.SetSystemLocked(false)
+				runtime.OnScreenUnlocked()
+				runtime.core.Publish(core.Event{Type: core.EventScreenUnlock, At: time.Now()})
 			}
 		}
 		log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
+	}
+}
+
+func formatCoreStatus(snapshot core.State) string {
+	now := time.Now()
+	switch snapshot.Phase {
+	case core.PhasePendingCooldown:
+		remaining := snapshot.CooldownStartUntil.Sub(now)
+		if remaining < 0 {
+			remaining = 0
+		}
+		return fmt.Sprintf("Cooldown starting | Remaining: %s", remaining.Round(time.Second))
+	case core.PhaseCooldown:
+		remaining := snapshot.CooldownUntil.Sub(now)
+		if remaining < 0 {
+			remaining = 0
+		}
+		return fmt.Sprintf("Cooldown active | Remaining: %s", remaining.Round(time.Second))
+	case core.PhaseBreak:
+		remaining := snapshot.BreakUntil.Sub(now)
+		if remaining < 0 {
+			remaining = 0
+		}
+		return fmt.Sprintf("Status: break | Break remaining: %s", remaining.Round(time.Second))
+	case core.PhaseActive:
+		return "Task active"
+	default:
+		return "Idle"
 	}
 }
 

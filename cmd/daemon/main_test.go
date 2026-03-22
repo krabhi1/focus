@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"focus/internal/core"
 	"focus/internal/protocol"
 	"focus/internal/state"
 	"focus/internal/sys"
@@ -18,16 +19,17 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	cfg := state.DefaultRuntimeConfig()
 	cfg.TaskShort = 10 * time.Millisecond
 	cfg.TaskMedium = 20 * time.Millisecond
+	cfg.CooldownShort = 200 * time.Millisecond
 	if err := state.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
-	restoreCooldownDelay := state.SetCooldownStartDelayForTest(10 * time.Millisecond)
+	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
 	t.Cleanup(restoreCooldownDelay)
 
-	st := newTestState(t)
+	rt := newTestRuntime(t)
 
 	socketPath := filepath.Join(t.TempDir(), "focus.sock")
 	listener, err := net.Listen("unix", socketPath)
@@ -40,7 +42,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	})
 
 	acceptDone := make(chan struct{})
-	srv := NewServer(st, sys.NoopActions{}, nil)
+	srv := NewServer(rt, sys.NoopActions{}, nil)
 	go func() {
 		defer close(acceptDone)
 		for {
@@ -113,7 +115,7 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 }
 
 func TestConnectionReloadFlow(t *testing.T) {
-	st := newTestState(t)
+	rt := newTestRuntime(t)
 
 	socketPath := filepath.Join(t.TempDir(), "focus.sock")
 	listener, err := net.Listen("unix", socketPath)
@@ -126,7 +128,7 @@ func TestConnectionReloadFlow(t *testing.T) {
 	})
 
 	var reloadCalls atomic.Int32
-	srv := NewServer(st, sys.NoopActions{}, func() error {
+	srv := NewServer(rt, sys.NoopActions{}, func() error {
 		reloadCalls.Add(1)
 		return nil
 	})
@@ -152,6 +154,77 @@ func TestConnectionReloadFlow(t *testing.T) {
 	if got := reloadCalls.Load(); got != 1 {
 		t.Fatalf("reload calls = %d, want 1", got)
 	}
+}
+
+func TestCoreBackedStatusTaskToCooldownToIdle(t *testing.T) {
+	cfg := state.DefaultRuntimeConfig()
+	cfg.TaskShort = 25 * time.Millisecond
+	cfg.TaskMedium = 50 * time.Millisecond
+	cfg.CooldownShort = 60 * time.Millisecond
+	if err := state.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
+	})
+	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
+	t.Cleanup(restoreCooldownDelay)
+
+	rt := newTestRuntime(t)
+	srv := newCoreBackedServerForTest(t, rt)
+
+	start := srv.handleRequest(protocol.Request{
+		Command: "start",
+		Start: &protocol.StartRequest{
+			Title:  "flow-task",
+			Preset: "short",
+		},
+	})
+	assertSuccessMessageContains(t, start, "Started task: flow-task")
+
+	waitForStatusContains(t, srv, "Cooldown starting", 1*time.Second)
+	waitForStatusContains(t, srv, "Cooldown active", 1*time.Second)
+	waitForStatusContains(t, srv, "Idle", 2*time.Second)
+}
+
+func TestCoreBackedStatusShowsBreakBeforeCooldown(t *testing.T) {
+	cfg := state.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 80 * time.Millisecond
+	cfg.TaskDeep = 150 * time.Millisecond
+	cfg.BreakLongStart = 10 * time.Millisecond
+	cfg.BreakLongDuration = 20 * time.Millisecond
+	cfg.BreakDeepStart = 30 * time.Millisecond
+	cfg.BreakDeepDuration = 20 * time.Millisecond
+	cfg.BreakWarning = 1 * time.Millisecond
+	cfg.BreakRelockDelay = 5 * time.Millisecond
+	cfg.CooldownLong = 60 * time.Millisecond
+	if err := state.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
+	})
+	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
+	t.Cleanup(restoreCooldownDelay)
+
+	rt := newTestRuntime(t)
+	srv := newCoreBackedServerForTest(t, rt)
+
+	start := srv.handleRequest(protocol.Request{
+		Command: "start",
+		Start: &protocol.StartRequest{
+			Title:  "break-flow-task",
+			Preset: "long",
+		},
+	})
+	assertSuccessMessageContains(t, start, "Started task: break-flow-task")
+
+	waitForStatusContains(t, srv, "Task active", 500*time.Millisecond)
+	waitForStatusContains(t, srv, "Status: break", 1*time.Second)
+	waitForStatusContains(t, srv, "Cooldown starting", 2*time.Second)
+	waitForStatusContains(t, srv, "Cooldown active", 2*time.Second)
 }
 
 func TestLoadDaemonConfigKeepsHardcodedEventsDefaults(t *testing.T) {
@@ -202,21 +275,43 @@ func TestParseDaemonOptionsIncludesEventsOverrides(t *testing.T) {
 	}
 }
 
-func newTestState(t *testing.T) *state.DaemonState {
+func TestFormatCoreStatus(t *testing.T) {
+	now := time.Now()
+	if got := formatCoreStatus(core.State{Phase: core.PhaseIdle}); got != "Idle" {
+		t.Fatalf("idle status = %q, want Idle", got)
+	}
+
+	pending := formatCoreStatus(core.State{
+		Phase:              core.PhasePendingCooldown,
+		CooldownStartUntil: now.Add(2 * time.Second),
+	})
+	if !strings.Contains(pending, "Cooldown starting") {
+		t.Fatalf("pending status = %q, want cooldown starting", pending)
+	}
+
+	cooldown := formatCoreStatus(core.State{
+		Phase:         core.PhaseCooldown,
+		CooldownUntil: now.Add(2 * time.Second),
+	})
+	if !strings.Contains(cooldown, "Cooldown active") {
+		t.Fatalf("cooldown status = %q, want cooldown active", cooldown)
+	}
+
+	brk := formatCoreStatus(core.State{
+		Phase:      core.PhaseBreak,
+		BreakUntil: now.Add(2 * time.Second),
+	})
+	if !strings.Contains(brk, "Status: break") {
+		t.Fatalf("break status = %q, want break status", brk)
+	}
+}
+
+func newTestRuntime(t *testing.T) *DaemonRuntime {
 	t.Helper()
 
-	st := &state.DaemonState{}
-	st.SetActions(sys.NoopActions{})
-	st.SetCooldownPolicyForTest(func(time.Duration) time.Duration {
-		return 200 * time.Millisecond
-	})
-
-	t.Cleanup(func() {
-		st.SetActions(sys.RealActions{})
-		st.SetCooldownPolicyForTest(nil)
-	})
-
-	return st
+	rt := NewDaemonRuntime(sys.NoopActions{})
+	t.Cleanup(rt.Close)
+	return rt
 }
 
 func roundTripRequest(t *testing.T, socketPath string, req protocol.Request) protocol.Response {
@@ -237,6 +332,36 @@ func roundTripRequest(t *testing.T, socketPath string, req protocol.Request) pro
 		t.Fatalf("Decode failed: %v", err)
 	}
 	return res
+}
+
+func newCoreBackedServerForTest(t *testing.T, rt *DaemonRuntime) *Server {
+	t.Helper()
+
+	srv := NewServer(rt, sys.NoopActions{}, nil)
+	srv.SetStatusProvider(func() string {
+		return formatCoreStatus(rt.CoreSnapshot())
+	})
+	return srv
+}
+
+func waitForStatusContains(t *testing.T, srv *Server, want string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	last := ""
+	for time.Now().Before(deadline) {
+		res := srv.handleRequest(protocol.Request{Command: "status"})
+		if res.Success == nil {
+			t.Fatalf("status response = %#v, want success", res)
+		}
+		last = res.Success.Message
+		if strings.Contains(last, want) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatalf("status did not contain %q within %s; last=%q", want, timeout, last)
 }
 
 func assertSuccessMessageContains(t *testing.T, res protocol.Response, want string) {
