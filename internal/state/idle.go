@@ -33,6 +33,7 @@ func (s *DaemonState) OnIdleExited() {
 	s.mu.Lock()
 	s.idleActive = false
 	s.stopIdleTimersLocked()
+	s.stopCompletionAlertLocked()
 	s.idleSince = time.Time{}
 	s.notified = false
 	s.mu.Unlock()

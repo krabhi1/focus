@@ -172,12 +172,13 @@ func (s *DaemonState) endBreak(taskID int) {
 	s.mu.Unlock()
 	actions.UnlockScreen()
 	actions.Notify("Break Complete", "Break period ended. Continue your task.")
-	actions.PlaySound("assets/task-ending.mp3")
+	s.startCompletionAlert()
 }
 
 func (s *DaemonState) OnScreenUnlocked() {
 	s.mu.Lock()
 	now := time.Now()
+	s.stopCompletionAlertLocked()
 	if s.currentTask == nil {
 		if remaining := s.cooldownRemainingLocked(now); remaining > 0 {
 			actions := s.actionsLocked()

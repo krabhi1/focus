@@ -15,6 +15,7 @@ type File struct {
 	Cooldown cooldownJSON `json:"cooldown"`
 	Break    breakJSON    `json:"break"`
 	Idle     idleJSON     `json:"idle"`
+	Alert    alertJSON    `json:"alert"`
 }
 
 type cooldownJSON struct {
@@ -38,6 +39,10 @@ type idleJSON struct {
 	PollInterval string `json:"poll_interval"`
 }
 
+type alertJSON struct {
+	RepeatInterval string `json:"repeat_interval"`
+}
+
 type Overrides struct {
 	CooldownShort *time.Duration
 	CooldownLong  *time.Duration
@@ -53,6 +58,8 @@ type Overrides struct {
 	IdleWarnAfter    *time.Duration
 	IdleLockAfter    *time.Duration
 	IdlePollInterval *time.Duration
+
+	CompletionAlertRepeatInterval *time.Duration
 }
 
 func DefaultPath() (string, error) {
@@ -127,6 +134,9 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	if err := applyDuration(&resolved.IdlePollInterval, fileCfg.Idle.PollInterval); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid idle.poll_interval: %w", err)
 	}
+	if err := applyDuration(&resolved.CompletionAlertRepeatInterval, fileCfg.Alert.RepeatInterval); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid alert.repeat_interval: %w", err)
+	}
 
 	applyOverride(&resolved.CooldownShort, overrides.CooldownShort)
 	applyOverride(&resolved.CooldownLong, overrides.CooldownLong)
@@ -140,6 +150,7 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	applyOverride(&resolved.IdleWarnAfter, overrides.IdleWarnAfter)
 	applyOverride(&resolved.IdleLockAfter, overrides.IdleLockAfter)
 	applyOverride(&resolved.IdlePollInterval, overrides.IdlePollInterval)
+	applyOverride(&resolved.CompletionAlertRepeatInterval, overrides.CompletionAlertRepeatInterval)
 
 	return resolved, nil
 }

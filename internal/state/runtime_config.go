@@ -18,9 +18,10 @@ type RuntimeConfig struct {
 	BreakDeepDuration time.Duration
 	BreakRelockDelay  time.Duration
 
-	IdleWarnAfter    time.Duration
-	IdleLockAfter    time.Duration
-	IdlePollInterval time.Duration
+	IdleWarnAfter                 time.Duration
+	IdleLockAfter                 time.Duration
+	IdlePollInterval              time.Duration
+	CompletionAlertRepeatInterval time.Duration
 }
 
 var (
@@ -41,9 +42,10 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		BreakDeepDuration: 10 * time.Minute,
 		BreakRelockDelay:  BreakRelockDelay,
 
-		IdleWarnAfter:    IdleWarningAfter,
-		IdleLockAfter:    IdleLockAfter,
-		IdlePollInterval: IdleMonitorInterval,
+		IdleWarnAfter:                 IdleWarningAfter,
+		IdleLockAfter:                 IdleLockAfter,
+		IdlePollInterval:              IdleMonitorInterval,
+		CompletionAlertRepeatInterval: 3 * time.Second,
 	}
 }
 
@@ -81,6 +83,7 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
 		{"idle.poll_interval", cfg.IdlePollInterval},
+		{"alert.repeat_interval", cfg.CompletionAlertRepeatInterval},
 	}
 
 	for _, item := range positive {

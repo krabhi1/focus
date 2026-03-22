@@ -41,10 +41,9 @@ func (s *DaemonState) onCooldownEnded(cooldownUntil time.Time) {
 		s.cooldownTimer = nil
 	}
 	s.resumeIdleTrackingIfNeededLocked(time.Now())
-	currentActions := s.actionsLocked()
 	s.mu.Unlock()
 
-	currentActions.PlaySound("assets/task-ending.mp3")
+	s.startCompletionAlert()
 }
 
 func cooldownDurationFor(duration time.Duration, cfg RuntimeConfig) time.Duration {

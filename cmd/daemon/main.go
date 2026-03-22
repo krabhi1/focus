@@ -135,6 +135,7 @@ func parseDaemonOptions() daemonOptions {
 	opts.overrides.IdleWarnAfter = fs.Duration("idle-warn-after", 0, "Override idle.warn_after duration")
 	opts.overrides.IdleLockAfter = fs.Duration("idle-lock-after", 0, "Override idle.lock_after duration")
 	opts.overrides.IdlePollInterval = fs.Duration("idle-poll-interval", 0, "Override idle.poll_interval duration")
+	opts.overrides.CompletionAlertRepeatInterval = fs.Duration("completion-alert-repeat-interval", 0, "Override alert.repeat_interval duration")
 	_ = fs.Parse(os.Args[1:])
 	normalizeDurationOverrides(&opts.overrides)
 	return opts
@@ -189,6 +190,7 @@ func normalizeDurationOverrides(overrides *config.Overrides) {
 	overrides.IdleWarnAfter = normalize(overrides.IdleWarnAfter)
 	overrides.IdleLockAfter = normalize(overrides.IdleLockAfter)
 	overrides.IdlePollInterval = normalize(overrides.IdlePollInterval)
+	overrides.CompletionAlertRepeatInterval = normalize(overrides.CompletionAlertRepeatInterval)
 }
 
 func ensureSocketPathAvailable(path string) error {

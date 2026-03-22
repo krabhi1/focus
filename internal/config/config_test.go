@@ -27,6 +27,7 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 		Cooldown: cooldownJSON{Long: "12m"},
 		Break:    breakJSON{Warning: "90s"},
 		Idle:     idleJSON{WarnAfter: "4m"},
+		Alert:    alertJSON{RepeatInterval: "7s"},
 	}
 	override := 8 * time.Minute
 	cfg, err := ResolveRuntimeConfig(defaults, fileCfg, Overrides{
@@ -47,6 +48,9 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	}
 	if cfg.IdleLockAfter != 8*time.Minute {
 		t.Fatalf("IdleLockAfter = %s, want 8m override", cfg.IdleLockAfter)
+	}
+	if cfg.CompletionAlertRepeatInterval != 7*time.Second {
+		t.Fatalf("CompletionAlertRepeatInterval = %s, want 7s", cfg.CompletionAlertRepeatInterval)
 	}
 }
 

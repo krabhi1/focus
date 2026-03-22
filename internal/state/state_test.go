@@ -426,6 +426,41 @@ func TestOnIdleEnteredLocksDuringCooldown(t *testing.T) {
 	}
 }
 
+func TestCompletionAlertLoopsUntilIdleExited(t *testing.T) {
+	s := newTestState(t)
+	actions := &atomicRecordingActions{}
+	s.actions = actions
+	s.idleActive = true
+
+	cfg := DefaultRuntimeConfig()
+	cfg.CompletionAlertRepeatInterval = 10 * time.Millisecond
+	if err := SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+
+	s.startCompletionAlert()
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.playSoundCount.Load() >= 2 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if got := actions.playSoundCount.Load(); got < 2 {
+		t.Fatalf("playSoundCount = %d, want at least 2 while idle", got)
+	}
+
+	s.OnScreenUnlocked()
+	count := actions.playSoundCount.Load()
+	time.Sleep(40 * time.Millisecond)
+
+	if got := actions.playSoundCount.Load(); got != count {
+		t.Fatalf("playSoundCount = %d, want %d after screen unlock", got, count)
+	}
+}
+
 type recordingActions struct {
 	lockCount       int
 	unlockCount     int
