@@ -49,6 +49,7 @@ type DaemonState struct {
 	breakStartTimer   *time.Timer
 	breakEndTimer     *time.Timer
 	breakRelockTimer  *time.Timer
+	cooldownTimer     *time.Timer
 	breakRelockUntil  time.Time
 	breakUntil        time.Time
 	cooldownUntil     time.Time

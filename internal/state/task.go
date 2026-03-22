@@ -169,8 +169,10 @@ func (s *DaemonState) endBreak(taskID int) {
 	s.breakRelockUntil = time.Time{}
 	actions := s.actionsLocked()
 	s.mu.Unlock()
-
+	fmt.Println("task end unlocking")
+	actions.UnlockScreen()
 	actions.Notify("Break Complete", "Break period ended. Continue your task.")
+	actions.PlaySound("assets/task-ending.mp3")
 }
 
 func (s *DaemonState) OnScreenUnlocked() {

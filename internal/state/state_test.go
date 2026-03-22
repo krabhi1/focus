@@ -274,6 +274,45 @@ func TestEndBreakClearsBreakState(t *testing.T) {
 	if actions.lastNotifyTitle != "Break Complete" {
 		t.Fatalf("last notify title = %q, want %q", actions.lastNotifyTitle, "Break Complete")
 	}
+	if actions.unlockCount != 1 {
+		t.Fatalf("unlockCount = %d, want 1", actions.unlockCount)
+	}
+	if actions.playSoundCount != 1 {
+		t.Fatalf("playSoundCount = %d, want 1", actions.playSoundCount)
+	}
+}
+
+func TestCooldownTimerPlaysSoundWhenCooldownEnds(t *testing.T) {
+	s := newTestState(t)
+	actions := &atomicRecordingActions{}
+	s.actions = actions
+	s.SetCooldownPolicyForTest(func(time.Duration) time.Duration {
+		return 20 * time.Millisecond
+	})
+
+	task := &Task{Duration: 30 * time.Minute}
+	s.beginCooldownLocked(task, time.Now())
+
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.playSoundCount.Load() > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if actions.playSoundCount.Load() != 1 {
+		t.Fatalf("playSoundCount = %d, want 1", actions.playSoundCount.Load())
+	}
+	if actions.unlockCount.Load() != 0 {
+		t.Fatalf("unlockCount = %d, want 0", actions.unlockCount.Load())
+	}
+	if !s.cooldownUntil.IsZero() {
+		t.Fatalf("cooldownUntil = %v, want zero", s.cooldownUntil)
+	}
+	if s.cooldownTimer != nil {
+		t.Fatal("cooldownTimer should be nil after expiry")
+	}
 }
 
 func TestGetStatusShowsBreakAndRelockCountdown(t *testing.T) {
@@ -332,6 +371,8 @@ func TestIdleMonitorLocksWhenCooldownActive(t *testing.T) {
 
 type recordingActions struct {
 	lockCount       int
+	unlockCount     int
+	playSoundCount  int
 	notifyCount     int
 	lastNotifyTitle string
 	lastNotifyBody  string
@@ -341,9 +382,13 @@ func (r *recordingActions) LockScreen() {
 	r.lockCount++
 }
 
-func (r *recordingActions) UnlockScreen() {}
+func (r *recordingActions) UnlockScreen() {
+	r.unlockCount++
+}
 
-func (r *recordingActions) PlaySound(string) {}
+func (r *recordingActions) PlaySound(string) {
+	r.playSoundCount++
+}
 
 func (r *recordingActions) Notify(title string, body string) {
 	r.notifyCount++
@@ -352,15 +397,21 @@ func (r *recordingActions) Notify(title string, body string) {
 }
 
 type atomicRecordingActions struct {
-	lockCount atomic.Int32
+	lockCount      atomic.Int32
+	unlockCount    atomic.Int32
+	playSoundCount atomic.Int32
 }
 
 func (a *atomicRecordingActions) LockScreen() {
 	a.lockCount.Add(1)
 }
 
-func (a *atomicRecordingActions) UnlockScreen() {}
+func (a *atomicRecordingActions) UnlockScreen() {
+	a.unlockCount.Add(1)
+}
 
-func (a *atomicRecordingActions) PlaySound(string) {}
+func (a *atomicRecordingActions) PlaySound(string) {
+	a.playSoundCount.Add(1)
+}
 
 func (a *atomicRecordingActions) Notify(string, string) {}

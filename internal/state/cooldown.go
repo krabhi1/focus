@@ -3,7 +3,16 @@ package state
 import "time"
 
 func (s *DaemonState) beginCooldownLocked(task *Task, now time.Time) {
-	s.cooldownUntil = now.Add(s.cooldownDuration(task.Duration))
+	duration := s.cooldownDuration(task.Duration)
+	s.cooldownUntil = now.Add(duration)
+	if s.cooldownTimer != nil {
+		s.cooldownTimer.Stop()
+		s.cooldownTimer = nil
+	}
+	cooldownUntil := s.cooldownUntil
+	s.cooldownTimer = time.AfterFunc(duration, func() {
+		s.onCooldownEnded(cooldownUntil)
+	})
 }
 
 func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
@@ -11,10 +20,33 @@ func (s *DaemonState) cooldownRemainingLocked(now time.Time) time.Duration {
 		return 0
 	}
 	if !now.Before(s.cooldownUntil) {
-		s.cooldownUntil = time.Time{}
 		return 0
 	}
 	return s.cooldownUntil.Sub(now)
+}
+
+func (s *DaemonState) onCooldownEnded(cooldownUntil time.Time) {
+	s.mu.Lock()
+	if !s.cooldownUntil.Equal(cooldownUntil) {
+		s.mu.Unlock()
+		return
+	}
+	if time.Now().Before(s.cooldownUntil) {
+		s.mu.Unlock()
+		return
+	}
+	playSound := s.currentTask == nil
+	s.cooldownUntil = time.Time{}
+	if s.cooldownTimer != nil {
+		s.cooldownTimer.Stop()
+		s.cooldownTimer = nil
+	}
+	currentActions := s.actionsLocked()
+	s.mu.Unlock()
+
+	if playSound {
+		currentActions.PlaySound("assets/task-ending.mp3")
+	}
 }
 
 func cooldownDurationFor(duration time.Duration, cfg RuntimeConfig) time.Duration {

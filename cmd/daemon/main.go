@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	idleThresholdSeconds = 300
-	idlePollSeconds      = 1
+	idleThresholdSeconds = 10
+	idlePollSeconds      = 5
 )
 
 func main() {
