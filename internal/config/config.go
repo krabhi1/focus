@@ -17,7 +17,6 @@ type File struct {
 	Break    breakJSON    `json:"break"`
 	Idle     idleJSON     `json:"idle"`
 	Alert    alertJSON    `json:"alert"`
-	Events   eventsJSON   `json:"events"`
 }
 
 type taskJSON struct {
@@ -49,11 +48,6 @@ type idleJSON struct {
 
 type alertJSON struct {
 	RepeatInterval string `json:"repeat_interval"`
-}
-
-type eventsJSON struct {
-	IdleThreshold string `json:"idle_threshold"`
-	IdlePoll      string `json:"idle_poll"`
 }
 
 type Overrides struct {
@@ -163,12 +157,6 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	}
 	if err := applyDuration(&resolved.IdleLockAfter, fileCfg.Idle.LockAfter); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid idle.lock_after: %w", err)
-	}
-	if err := applyDuration(&resolved.EventsIdleThreshold, fileCfg.Events.IdleThreshold); err != nil {
-		return state.RuntimeConfig{}, fmt.Errorf("invalid events.idle_threshold: %w", err)
-	}
-	if err := applyDuration(&resolved.EventsIdlePoll, fileCfg.Events.IdlePoll); err != nil {
-		return state.RuntimeConfig{}, fmt.Errorf("invalid events.idle_poll: %w", err)
 	}
 	if err := applyDuration(&resolved.CompletionAlertRepeatInterval, fileCfg.Alert.RepeatInterval); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid alert.repeat_interval: %w", err)

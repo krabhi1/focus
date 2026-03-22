@@ -15,6 +15,14 @@ func (s *DaemonState) OnIdleEntered() {
 		return
 	}
 
+	if remaining := s.pendingCooldownRemainingLocked(now); remaining > 0 {
+		s.stopIdleTimersLocked()
+		s.idleSince = time.Time{}
+		s.notified = false
+		s.mu.Unlock()
+		return
+	}
+
 	if remaining := s.cooldownRemainingLocked(now); remaining > 0 {
 		s.stopIdleTimersLocked()
 		s.idleSince = time.Time{}
@@ -103,6 +111,9 @@ func (s *DaemonState) lockIfStillIdle(idleSince time.Time) {
 
 func (s *DaemonState) resumeIdleTrackingIfNeededLocked(now time.Time) {
 	if !s.idleActive || s.currentTask != nil || s.isSystemLocked {
+		return
+	}
+	if remaining := s.pendingCooldownRemainingLocked(now); remaining > 0 {
 		return
 	}
 	if remaining := s.cooldownRemainingLocked(now); remaining > 0 {

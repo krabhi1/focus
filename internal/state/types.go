@@ -48,12 +48,14 @@ type DaemonState struct {
 	breakStartTimer     *time.Timer
 	breakEndTimer       *time.Timer
 	breakRelockTimer    *time.Timer
+	cooldownStartTimer  *time.Timer
 	cooldownTimer       *time.Timer
 	idleWarnTimer       *time.Timer
 	idleLockTimer       *time.Timer
 	completionAlertStop chan struct{}
 	breakRelockUntil    time.Time
 	breakUntil          time.Time
+	cooldownStartUntil  time.Time
 	cooldownUntil       time.Time
 	cooldownPolicy      func(time.Duration) time.Duration
 	isSystemLocked      bool

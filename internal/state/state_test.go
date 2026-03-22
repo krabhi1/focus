@@ -2,6 +2,7 @@ package state
 
 import (
 	"focus/internal/sys"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -311,6 +312,59 @@ func TestCooldownTimerPlaysSoundWhenCooldownEnds(t *testing.T) {
 	}
 	if s.cooldownTimer != nil {
 		t.Fatal("cooldownTimer should be nil after expiry")
+	}
+}
+
+func TestCompleteCurrentTaskDelaysCooldownAndLocksOnStart(t *testing.T) {
+	s := newTestState(t)
+	actions := &recordingActions{}
+	s.actions = actions
+	t.Setenv("FOCUS_HISTORY_FILE", filepath.Join(t.TempDir(), "history.jsonl"))
+	oldDelay := cooldownStartDelay
+	cooldownStartDelay = 10 * time.Millisecond
+	t.Cleanup(func() {
+		cooldownStartDelay = oldDelay
+	})
+
+	task := &Task{
+		ID:        7,
+		Title:     "deep work",
+		Duration:  30 * time.Minute,
+		StartTime: time.Now(),
+		Status:    StatusActive,
+	}
+	s.currentTask = task
+
+	s.completeCurrentTask(7)
+
+	if actions.lockCount != 0 {
+		t.Fatalf("lockCount = %d, want 0 before cooldown starts", actions.lockCount)
+	}
+	if !s.cooldownStartUntil.After(time.Now()) {
+		t.Fatalf("cooldownStartUntil = %v, want future cooldown start", s.cooldownStartUntil)
+	}
+
+	s.OnIdleEntered()
+	if actions.lockCount != 0 {
+		t.Fatalf("lockCount = %d, want 0 during cooldown delay", actions.lockCount)
+	}
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.lockCount == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if actions.lockCount != 1 {
+		t.Fatalf("lockCount = %d, want 1 when cooldown starts", actions.lockCount)
+	}
+	if s.cooldownUntil.IsZero() {
+		t.Fatal("expected cooldown to start after delay")
+	}
+	if !s.cooldownStartUntil.IsZero() {
+		t.Fatalf("cooldownStartUntil = %v, want zero after cooldown starts", s.cooldownStartUntil)
 	}
 }
 

@@ -28,6 +28,9 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 	if remaining := s.cooldownRemainingLocked(time.Now()); remaining > 0 {
 		return nil, fmt.Errorf("cooldown active, wait %s before creating a new task", remaining.Round(time.Second))
 	}
+	if remaining := s.pendingCooldownRemainingLocked(time.Now()); remaining > 0 {
+		return nil, fmt.Errorf("cooldown starting soon, wait %s before creating a new task", remaining.Round(time.Second))
+	}
 
 	task := &Task{
 		ID:        len(s.taskHistory) + 1,
@@ -105,7 +108,7 @@ func (s *DaemonState) completeCurrentTask(taskID int) {
 
 	task := s.currentTask
 	task.Status = StatusCompleted
-	s.beginCooldownLocked(task, time.Now())
+	s.scheduleCooldownStartLocked(task, time.Now())
 	actions := s.actionsLocked()
 	s.cleanupTask()
 	s.mu.Unlock()
@@ -114,8 +117,7 @@ func (s *DaemonState) completeCurrentTask(taskID int) {
 		fmt.Printf("failed to persist completed task: %v\n", err)
 	}
 
-	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", task.Title))
-	time.Sleep(5 * time.Second)
+	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in 10s; locking screen.", task.Title))
 }
 
 func (s *DaemonState) notifyBreakComing(taskID int) {
@@ -180,6 +182,10 @@ func (s *DaemonState) OnScreenUnlocked() {
 	now := time.Now()
 	s.stopCompletionAlertLocked()
 	if s.currentTask == nil {
+		if remaining := s.pendingCooldownRemainingLocked(now); remaining > 0 {
+			s.mu.Unlock()
+			return
+		}
 		if remaining := s.cooldownRemainingLocked(now); remaining > 0 {
 			actions := s.actionsLocked()
 			s.mu.Unlock()
@@ -289,6 +295,9 @@ func (s *DaemonState) GetStatus() string {
 	defer s.mu.Unlock()
 
 	if s.currentTask == nil {
+		if remaining := s.pendingCooldownRemainingLocked(time.Now()); remaining > 0 {
+			return fmt.Sprintf("Cooldown starting | Remaining: %s", remaining.Round(time.Second))
+		}
 		if remaining := s.cooldownRemainingLocked(time.Now()); remaining > 0 {
 			return fmt.Sprintf("Cooldown active | Remaining: %s", remaining.Round(time.Second))
 		}

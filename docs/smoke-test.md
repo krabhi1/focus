@@ -33,10 +33,6 @@ Create `focus.dev.json` in the repo root:
   },
   "alert": {
     "repeat_interval": "1s"
-  },
-  "events": {
-    "idle_threshold": "5s",
-    "idle_poll": "1s"
   }
 }
 ```
@@ -49,7 +45,7 @@ Start the daemon with disposable paths:
 FOCUS_CONFIG=./focus.dev.json \
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
 FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
-go run ./cmd/daemon
+go run ./cmd/daemon --events-idle-threshold 5s --events-idle-poll 1s
 ```
 
 ## Exercise The Flow

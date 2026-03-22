@@ -57,10 +57,6 @@ Example:
     "warn_after": "3m",
     "lock_after": "5m"
   },
-  "events": {
-    "idle_threshold": "10s",
-    "idle_poll": "5s"
-  },
   "alert": {
     "repeat_interval": "3s"
   }
@@ -121,14 +117,17 @@ Daemon-side idle policy.
 
 The daemon now uses `focus-events` idle transitions, so this section is only about what the daemon does after idle is detected.
 
-### `events`
+### `focus-events` defaults
 
-Helper-side idle detection settings for `focus-events`.
+The helper idle detection values are hardcoded in the daemon defaults:
 
-- `events.idle_threshold`: how long input must be inactive before `idle entered`
-- `events.idle_poll`: how often the helper checks idle state
+- idle threshold: `10s`
+- idle poll: `5s`
 
-These values control the helper that emits idle transitions. They are separate from the daemon idle policy.
+Use daemon flags if you want to override them temporarily:
+
+- `--events-idle-threshold <duration>`
+- `--events-idle-poll <duration>`
 
 ### `alert`
 
@@ -146,7 +145,6 @@ Examples:
 - task presets must be strictly increasing
 - break timings must fit inside the task duration
 - idle warn must be less than idle lock
-- `events.idle_threshold` and `events.idle_poll` must be positive
 - alert repeat interval must be positive
 
 If config validation fails, the daemon exits before serving requests.
@@ -181,15 +179,17 @@ Common flags:
 - `--break-relock-delay <duration>`: override `break.relock_delay`
 - `--idle-warn-after <duration>`: override `idle.warn_after`
 - `--idle-lock-after <duration>`: override `idle.lock_after`
-- `--events-idle-threshold <duration>`: override `events.idle_threshold`
-- `--events-idle-poll <duration>`: override `events.idle_poll`
 - `--completion-alert-repeat-interval <duration>`: override `alert.repeat_interval`
+- `--events-idle-threshold <duration>`: override `focus-events` idle threshold
+- `--events-idle-poll <duration>`: override `focus-events` idle poll
 
 Precedence:
 
 1. CLI flag override
 2. JSON config file
 3. built-in defaults
+
+The `focus-events` idle values are not read from JSON config anymore.
 
 ## Client Commands
 
@@ -408,10 +408,6 @@ Typical values are long enough to match real work sessions:
     "warn_after": "3m",
     "lock_after": "5m"
   },
-  "events": {
-    "idle_threshold": "10s",
-    "idle_poll": "5s"
-  },
   "alert": {
     "repeat_interval": "3s"
   }
@@ -446,10 +442,6 @@ Use a local `focus.dev.json` when you want to test the full flow quickly:
   "idle": {
     "warn_after": "5s",
     "lock_after": "10s"
-  },
-  "events": {
-    "idle_threshold": "5s",
-    "idle_poll": "1s"
   },
   "alert": {
     "repeat_interval": "1s"
@@ -499,7 +491,6 @@ Check the config file and look for errors like:
 - invalid `task.*`
 - `break.warning` not before break start
 - `break` window longer than the task duration
-- `events.idle_threshold` or `events.idle_poll` set to zero or negative
 
 ### Missing helper binary
 
@@ -542,5 +533,5 @@ That lets you verify:
 
 - `focus-events` is the source of idle transitions.
 - `idle.warn_after` and `idle.lock_after` are daemon-side policy values.
-- `events.idle_threshold` and `events.idle_poll` are helper-side detection values.
+- `focus-events` idle threshold/poll are hardcoded daemon defaults and can be overridden with daemon flags.
 - The history log only stores completed tasks.

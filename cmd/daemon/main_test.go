@@ -24,6 +24,8 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
+	restoreCooldownDelay := state.SetCooldownStartDelayForTest(10 * time.Millisecond)
+	t.Cleanup(restoreCooldownDelay)
 
 	st := newTestState(t)
 
@@ -152,7 +154,7 @@ func TestConnectionReloadFlow(t *testing.T) {
 	}
 }
 
-func TestLoadDaemonConfigAppliesEventsOverrides(t *testing.T) {
+func TestLoadDaemonConfigKeepsHardcodedEventsDefaults(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	body := `{
@@ -160,8 +162,7 @@ func TestLoadDaemonConfigAppliesEventsOverrides(t *testing.T) {
 		"cooldown":{"short":"5s","long":"6s","deep":"7s"},
 		"break":{"long_start":"5s","deep_start":"10s","warning":"2s","long_duration":"3s","deep_duration":"4s","relock_delay":"2s"},
 		"idle":{"warn_after":"2s","lock_after":"4s"},
-		"alert":{"repeat_interval":"1s"},
-		"events":{"idle_threshold":"9s","idle_poll":"8s"}
+		"alert":{"repeat_interval":"1s"}
 	}`
 	if err := os.WriteFile(configPath, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
@@ -173,11 +174,11 @@ func TestLoadDaemonConfigAppliesEventsOverrides(t *testing.T) {
 	}
 
 	cfg := state.GetRuntimeConfig()
-	if cfg.EventsIdleThreshold != 9*time.Second {
-		t.Fatalf("EventsIdleThreshold = %s, want 9s", cfg.EventsIdleThreshold)
+	if cfg.EventsIdleThreshold != 10*time.Second {
+		t.Fatalf("EventsIdleThreshold = %s, want 10s default", cfg.EventsIdleThreshold)
 	}
-	if cfg.EventsIdlePoll != 8*time.Second {
-		t.Fatalf("EventsIdlePoll = %s, want 8s", cfg.EventsIdlePoll)
+	if cfg.EventsIdlePoll != 5*time.Second {
+		t.Fatalf("EventsIdlePoll = %s, want 5s default", cfg.EventsIdlePoll)
 	}
 }
 

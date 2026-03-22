@@ -29,7 +29,6 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 		Break:    breakJSON{Warning: "90s"},
 		Idle:     idleJSON{WarnAfter: "4m"},
 		Alert:    alertJSON{RepeatInterval: "7s"},
-		Events:   eventsJSON{IdleThreshold: "5s", IdlePoll: "1s"},
 	}
 	override := 8 * time.Minute
 	cfg, err := ResolveRuntimeConfig(defaults, fileCfg, Overrides{
@@ -57,11 +56,11 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	if cfg.CompletionAlertRepeatInterval != 7*time.Second {
 		t.Fatalf("CompletionAlertRepeatInterval = %s, want 7s", cfg.CompletionAlertRepeatInterval)
 	}
-	if cfg.EventsIdleThreshold != 5*time.Second {
-		t.Fatalf("EventsIdleThreshold = %s, want 5s", cfg.EventsIdleThreshold)
+	if cfg.EventsIdleThreshold != defaults.EventsIdleThreshold {
+		t.Fatalf("EventsIdleThreshold = %s, want default %s", cfg.EventsIdleThreshold, defaults.EventsIdleThreshold)
 	}
-	if cfg.EventsIdlePoll != 1*time.Second {
-		t.Fatalf("EventsIdlePoll = %s, want 1s", cfg.EventsIdlePoll)
+	if cfg.EventsIdlePoll != defaults.EventsIdlePoll {
+		t.Fatalf("EventsIdlePoll = %s, want default %s", cfg.EventsIdlePoll, defaults.EventsIdlePoll)
 	}
 }
 
@@ -96,19 +95,6 @@ func TestResolveRuntimeConfigRejectsInvalidDuration(t *testing.T) {
 	}
 }
 
-func TestResolveRuntimeConfigRejectsInvalidEventsDuration(t *testing.T) {
-	defaults := state.DefaultRuntimeConfig()
-	_, err := ResolveRuntimeConfig(defaults, File{
-		Events: eventsJSON{IdleThreshold: "bad"},
-	}, Overrides{})
-	if err == nil {
-		t.Fatal("expected invalid duration error")
-	}
-	if !strings.Contains(err.Error(), "events.idle_threshold") {
-		t.Fatalf("error = %q, want events.idle_threshold context", err.Error())
-	}
-}
-
 func TestDefaultPathUsesFocusConfigEnv(t *testing.T) {
 	t.Setenv("FOCUS_CONFIG", "/tmp/focus-custom-config.json")
 	got, err := DefaultPath()
@@ -122,7 +108,7 @@ func TestDefaultPathUsesFocusConfigEnv(t *testing.T) {
 
 func TestLoadParsesJSONFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	body := `{"idle":{"warn_after":"10s","lock_after":"20s"},"events":{"idle_threshold":"5s","idle_poll":"1s"}}`
+	body := `{"idle":{"warn_after":"10s","lock_after":"20s"}}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
@@ -135,8 +121,5 @@ func TestLoadParsesJSONFile(t *testing.T) {
 	}
 	if cfg.Idle.WarnAfter != "10s" {
 		t.Fatalf("idle.warn_after = %q, want 10s", cfg.Idle.WarnAfter)
-	}
-	if cfg.Events.IdleThreshold != "5s" {
-		t.Fatalf("events.idle_threshold = %q, want 5s", cfg.Events.IdleThreshold)
 	}
 }
