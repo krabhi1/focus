@@ -87,7 +87,6 @@ func run() error {
 	}()
 
 	fmt.Println("Go Daemon listening on", socketPath)
-	go state.Get().StartIdleMonitor(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -217,6 +216,13 @@ func ensureSocketPathAvailable(path string) error {
 func consumeHelperEvents(eventCh <-chan events.Event) {
 	for event := range eventCh {
 		switch event.Kind {
+		case events.KindIdle:
+			switch event.State {
+			case "entered":
+				state.Get().OnIdleEntered()
+			case "exited":
+				state.Get().OnIdleExited()
+			}
 		case events.KindScreen:
 			switch event.State {
 			case "locked":

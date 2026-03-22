@@ -35,18 +35,16 @@ func (s *DaemonState) onCooldownEnded(cooldownUntil time.Time) {
 		s.mu.Unlock()
 		return
 	}
-	playSound := s.currentTask == nil
 	s.cooldownUntil = time.Time{}
 	if s.cooldownTimer != nil {
 		s.cooldownTimer.Stop()
 		s.cooldownTimer = nil
 	}
+	s.resumeIdleTrackingIfNeededLocked(time.Now())
 	currentActions := s.actionsLocked()
 	s.mu.Unlock()
 
-	if playSound {
-		currentActions.PlaySound("assets/task-ending.mp3")
-	}
+	currentActions.PlaySound("assets/task-ending.mp3")
 }
 
 func cooldownDurationFor(duration time.Duration, cfg RuntimeConfig) time.Duration {

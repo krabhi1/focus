@@ -91,6 +91,7 @@ func (s *DaemonState) CancelCurrentTask() (*Task, error) {
 	task := s.currentTask
 	task.Status = StatusCancelled
 	s.cleanupTask()
+	s.resumeIdleTrackingIfNeededLocked(time.Now())
 
 	return task, nil
 }
@@ -169,7 +170,6 @@ func (s *DaemonState) endBreak(taskID int) {
 	s.breakRelockUntil = time.Time{}
 	actions := s.actionsLocked()
 	s.mu.Unlock()
-	fmt.Println("task end unlocking")
 	actions.UnlockScreen()
 	actions.Notify("Break Complete", "Break period ended. Continue your task.")
 	actions.PlaySound("assets/task-ending.mp3")
@@ -186,6 +186,7 @@ func (s *DaemonState) OnScreenUnlocked() {
 			actions.LockScreen()
 			return
 		}
+		s.resumeIdleTrackingIfNeededLocked(now)
 		s.mu.Unlock()
 		return
 	}
@@ -227,6 +228,9 @@ func (s *DaemonState) OnScreenLocked() {
 		s.breakRelockTimer = nil
 	}
 	s.breakRelockUntil = time.Time{}
+	s.stopIdleTimersLocked()
+	s.idleSince = time.Time{}
+	s.notified = false
 }
 
 func (s *DaemonState) relockIfBreak(taskID int) {
@@ -274,6 +278,9 @@ func (s *DaemonState) cleanupTask() {
 		s.breakRelockTimer = nil
 	}
 	s.breakRelockUntil = time.Time{}
+	s.stopIdleTimersLocked()
+	s.idleSince = time.Time{}
+	s.notified = false
 }
 
 func (s *DaemonState) GetStatus() string {

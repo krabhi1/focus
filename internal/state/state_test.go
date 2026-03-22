@@ -1,7 +1,6 @@
 package state
 
 import (
-	"context"
 	"focus/internal/sys"
 	"strings"
 	"sync/atomic"
@@ -340,33 +339,91 @@ func TestGetStatusShowsBreakAndRelockCountdown(t *testing.T) {
 	}
 }
 
-func TestIdleMonitorLocksWhenCooldownActive(t *testing.T) {
+func TestOnIdleEnteredSchedulesWarningAndLock(t *testing.T) {
+	s := newTestState(t)
+	actions := &atomicRecordingActions{}
+	s.actions = actions
+	cfg := DefaultRuntimeConfig()
+	cfg.IdleWarnAfter = 10 * time.Millisecond
+	cfg.IdleLockAfter = 25 * time.Millisecond
+	if err := SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+
+	s.OnIdleEntered()
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.notifyCount.Load() > 0 && actions.lockCount.Load() > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if actions.notifyCount.Load() != 1 {
+		t.Fatalf("notifyCount = %d, want 1", actions.notifyCount.Load())
+	}
+	if actions.lockCount.Load() != 1 {
+		t.Fatalf("lockCount = %d, want 1", actions.lockCount.Load())
+	}
+	if !s.idleActive {
+		t.Fatal("expected idle tracking to remain active")
+	}
+}
+
+func TestOnIdleExitedCancelsPendingTimers(t *testing.T) {
+	s := newTestState(t)
+	actions := &atomicRecordingActions{}
+	s.actions = actions
+	cfg := DefaultRuntimeConfig()
+	cfg.IdleWarnAfter = 40 * time.Millisecond
+	cfg.IdleLockAfter = 80 * time.Millisecond
+	if err := SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+
+	s.OnIdleEntered()
+	s.OnIdleExited()
+
+	time.Sleep(150 * time.Millisecond)
+
+	if actions.notifyCount.Load() != 0 {
+		t.Fatalf("notifyCount = %d, want 0", actions.notifyCount.Load())
+	}
+	if actions.lockCount.Load() != 0 {
+		t.Fatalf("lockCount = %d, want 0", actions.lockCount.Load())
+	}
+	if s.idleActive {
+		t.Fatal("expected idleActive to be false")
+	}
+	if !s.idleSince.IsZero() {
+		t.Fatal("expected idleSince to be cleared")
+	}
+	if s.idleWarnTimer != nil || s.idleLockTimer != nil {
+		t.Fatal("expected idle timers to be cleared")
+	}
+}
+
+func TestOnIdleEnteredLocksDuringCooldown(t *testing.T) {
 	s := newTestState(t)
 	actions := &atomicRecordingActions{}
 	s.actions = actions
 	s.cooldownUntil = time.Now().Add(150 * time.Millisecond)
 
-	cfg := DefaultRuntimeConfig()
-	cfg.IdlePollInterval = 10 * time.Millisecond
-	cfg.IdleWarnAfter = 5 * time.Minute
-	cfg.IdleLockAfter = 10 * time.Minute
-	if err := SetRuntimeConfig(cfg); err != nil {
-		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	s.OnIdleEntered()
+
+	if actions.lockCount.Load() != 1 {
+		t.Fatalf("lockCount = %d, want 1", actions.lockCount.Load())
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go s.StartIdleMonitor(ctx)
-
-	deadline := time.Now().Add(400 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if actions.lockCount.Load() > 0 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if actions.notifyCount.Load() != 0 {
+		t.Fatalf("notifyCount = %d, want 0", actions.notifyCount.Load())
 	}
-
-	t.Fatalf("expected cooldown lock via idle monitor; lockCount=%d", actions.lockCount.Load())
+	if !s.idleActive {
+		t.Fatal("expected idle tracking to remain active")
+	}
+	if !s.idleSince.IsZero() {
+		t.Fatal("expected idleSince to be cleared")
+	}
 }
 
 type recordingActions struct {
@@ -397,6 +454,7 @@ func (r *recordingActions) Notify(title string, body string) {
 }
 
 type atomicRecordingActions struct {
+	notifyCount    atomic.Int32
 	lockCount      atomic.Int32
 	unlockCount    atomic.Int32
 	playSoundCount atomic.Int32
@@ -414,4 +472,6 @@ func (a *atomicRecordingActions) PlaySound(string) {
 	a.playSoundCount.Add(1)
 }
 
-func (a *atomicRecordingActions) Notify(string, string) {}
+func (a *atomicRecordingActions) Notify(string, string) {
+	a.notifyCount.Add(1)
+}
