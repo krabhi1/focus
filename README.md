@@ -22,7 +22,7 @@ Current runtime model:
 - **Break Enforcement (long/deep only):**
   - You get a reminder 2 minutes before the break starts.
   - At break start, Focus locks the screen.
-  - If the screen is unlocked during break, Focus warns once and relocks after 30 seconds (if still in break).
+  - If the screen is unlocked during break or cooldown, Focus warns once and relocks after the configured `relock_delay`.
 - **Post-Task Cooldown:** Cooldown starts only after task completion (not during the in-task break).
 - **Automatic Tracking:** There is no need for manual toggling. Focus monitors your keyboard, mouse, and screen activity to automatically pause and resume tasks whenever you step away.
 - **Heads-up Notifications:** You’ll receive a notification 5 minutes before a task ends, giving you time to wrap up your work gracefully.
@@ -52,7 +52,7 @@ flowchart TB
     Cooldown -- unlock during cooldown --> Lock
 ```
 
-`Idle` means no task is running and no cooldown is active. `Break` only applies to long and deep tasks. Cooldown is hard: if the user unlocks during cooldown, Focus locks the screen again. Screen locking is an action, not a separate state.
+`Idle` means no task is running and no cooldown is active. `Break` only applies to long and deep tasks. If the user unlocks during break or cooldown, Focus relocks after `relock_delay`. Screen locking is an action, not a separate state.
 
 ## System Requirements
 

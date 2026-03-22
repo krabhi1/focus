@@ -16,12 +16,13 @@ type RuntimeConfig struct {
 	CooldownLong  time.Duration
 	CooldownDeep  time.Duration
 
-	BreakLongStart    time.Duration
-	BreakDeepStart    time.Duration
-	BreakWarning      time.Duration
-	BreakLongDuration time.Duration
-	BreakDeepDuration time.Duration
-	BreakRelockDelay  time.Duration
+	BreakLongStart     time.Duration
+	BreakDeepStart     time.Duration
+	BreakWarning       time.Duration
+	BreakLongDuration  time.Duration
+	BreakDeepDuration  time.Duration
+	RelockDelay        time.Duration
+	CooldownStartDelay time.Duration
 
 	IdleWarnAfter                 time.Duration
 	IdleLockAfter                 time.Duration
@@ -46,12 +47,13 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		CooldownLong:  LongCooldownDuration,
 		CooldownDeep:  DeepCooldownDuration,
 
-		BreakLongStart:    LongTaskBreakStartOffset,
-		BreakDeepStart:    DeepTaskBreakStartOffset,
-		BreakWarning:      BreakWarningOffset,
-		BreakLongDuration: 5 * time.Minute,
-		BreakDeepDuration: 10 * time.Minute,
-		BreakRelockDelay:  BreakRelockDelay,
+		BreakLongStart:     LongTaskBreakStartOffset,
+		BreakDeepStart:     DeepTaskBreakStartOffset,
+		BreakWarning:       BreakWarningOffset,
+		BreakLongDuration:  5 * time.Minute,
+		BreakDeepDuration:  10 * time.Minute,
+		RelockDelay:        RelockDelay,
+		CooldownStartDelay: CooldownStartDelay,
 
 		IdleWarnAfter:                 IdleWarningAfter,
 		IdleLockAfter:                 IdleLockAfter,
@@ -95,7 +97,8 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		{"break.warning", cfg.BreakWarning},
 		{"break.long_duration", cfg.BreakLongDuration},
 		{"break.deep_duration", cfg.BreakDeepDuration},
-		{"break.relock_delay", cfg.BreakRelockDelay},
+		{"relock_delay", cfg.RelockDelay},
+		{"cooldown_start_delay", cfg.CooldownStartDelay},
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
 		{"events.idle_threshold", cfg.EventsIdleThreshold},
@@ -133,11 +136,11 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 	if cfg.BreakDeepStart+cfg.BreakDeepDuration >= cfg.TaskDeep {
 		return fmt.Errorf("break.deep_start + break.deep_duration must be less than task.deep")
 	}
-	if cfg.BreakRelockDelay >= cfg.BreakLongDuration {
-		return fmt.Errorf("break.relock_delay must be less than break.long_duration")
+	if cfg.RelockDelay >= cfg.BreakLongDuration {
+		return fmt.Errorf("relock_delay must be less than break.long_duration")
 	}
-	if cfg.BreakRelockDelay >= cfg.BreakDeepDuration {
-		return fmt.Errorf("break.relock_delay must be less than break.deep_duration")
+	if cfg.RelockDelay >= cfg.BreakDeepDuration {
+		return fmt.Errorf("relock_delay must be less than break.deep_duration")
 	}
 
 	return nil

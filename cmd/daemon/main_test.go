@@ -20,14 +20,13 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	cfg.TaskShort = 10 * time.Millisecond
 	cfg.TaskMedium = 20 * time.Millisecond
 	cfg.CooldownShort = 200 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
 	if err := state.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
-	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
-	t.Cleanup(restoreCooldownDelay)
 
 	rt := newTestRuntime(t)
 
@@ -161,14 +160,13 @@ func TestCoreBackedStatusTaskToCooldownToIdle(t *testing.T) {
 	cfg.TaskShort = 25 * time.Millisecond
 	cfg.TaskMedium = 50 * time.Millisecond
 	cfg.CooldownShort = 60 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
 	if err := state.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
-	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
-	t.Cleanup(restoreCooldownDelay)
 
 	rt := newTestRuntime(t)
 	srv := newCoreBackedServerForTest(t, rt)
@@ -198,16 +196,15 @@ func TestCoreBackedStatusShowsBreakBeforeCooldown(t *testing.T) {
 	cfg.BreakDeepStart = 30 * time.Millisecond
 	cfg.BreakDeepDuration = 20 * time.Millisecond
 	cfg.BreakWarning = 1 * time.Millisecond
-	cfg.BreakRelockDelay = 5 * time.Millisecond
+	cfg.RelockDelay = 5 * time.Millisecond
 	cfg.CooldownLong = 60 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
 	if err := state.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
-	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
-	t.Cleanup(restoreCooldownDelay)
 
 	rt := newTestRuntime(t)
 	srv := newCoreBackedServerForTest(t, rt)
@@ -233,7 +230,9 @@ func TestLoadDaemonConfigKeepsHardcodedEventsDefaults(t *testing.T) {
 	body := `{
 		"task":{"short":"5s","medium":"10s","long":"20s","deep":"30s"},
 		"cooldown":{"short":"5s","long":"6s","deep":"7s"},
-		"break":{"long_start":"5s","deep_start":"10s","warning":"2s","long_duration":"3s","deep_duration":"4s","relock_delay":"2s"},
+		"break":{"long_start":"5s","deep_start":"10s","warning":"2s","long_duration":"3s","deep_duration":"4s"},
+		"relock_delay":"2s",
+		"cooldown_start_delay":"10s",
 		"idle":{"warn_after":"2s","lock_after":"4s"},
 		"alert":{"repeat_interval":"1s"}
 	}`
@@ -261,6 +260,8 @@ func TestParseDaemonOptionsIncludesEventsOverrides(t *testing.T) {
 		"focusd",
 		"--events-idle-threshold", "7s",
 		"--events-idle-poll", "2s",
+		"--relock-delay", "9s",
+		"--cooldown-start-delay", "4s",
 	}
 	t.Cleanup(func() {
 		os.Args = oldArgs
@@ -272,6 +273,12 @@ func TestParseDaemonOptionsIncludesEventsOverrides(t *testing.T) {
 	}
 	if opts.overrides.EventsIdlePoll == nil || *opts.overrides.EventsIdlePoll != 2*time.Second {
 		t.Fatalf("EventsIdlePoll override not parsed: %#v", opts.overrides.EventsIdlePoll)
+	}
+	if opts.overrides.RelockDelay == nil || *opts.overrides.RelockDelay != 9*time.Second {
+		t.Fatalf("RelockDelay override not parsed: %#v", opts.overrides.RelockDelay)
+	}
+	if opts.overrides.CooldownStartDelay == nil || *opts.overrides.CooldownStartDelay != 4*time.Second {
+		t.Fatalf("CooldownStartDelay override not parsed: %#v", opts.overrides.CooldownStartDelay)
 	}
 }
 

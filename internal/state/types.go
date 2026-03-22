@@ -19,7 +19,8 @@ const (
 	LongTaskBreakStartOffset = 25 * time.Minute
 	DeepTaskBreakStartOffset = 45 * time.Minute
 	BreakWarningOffset       = 2 * time.Minute
-	BreakRelockDelay         = 30 * time.Second
+	RelockDelay              = 30 * time.Second
+	CooldownStartDelay       = 10 * time.Second
 
 	IdleWarningAfter = 30 * time.Second
 	IdleLockAfter    = 60 * time.Second

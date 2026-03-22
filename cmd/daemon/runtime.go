@@ -11,16 +11,6 @@ import (
 	"time"
 )
 
-var cooldownStartDelay = 10 * time.Second
-
-func setCooldownStartDelayForTest(d time.Duration) func() {
-	old := cooldownStartDelay
-	cooldownStartDelay = d
-	return func() {
-		cooldownStartDelay = old
-	}
-}
-
 type DaemonRuntime struct {
 	mu      sync.Mutex
 	actions sys.Actions
@@ -37,7 +27,7 @@ type DaemonRuntime struct {
 	breakWarnTimer     runtimeTimer
 	breakStartTimer    runtimeTimer
 	breakEndTimer      runtimeTimer
-	breakRelockTimer   runtimeTimer
+	relockTimer        runtimeTimer
 	cooldownStartTimer runtimeTimer
 	cooldownEndTimer   runtimeTimer
 	idleWarnTimer      runtimeTimer
@@ -47,7 +37,7 @@ type DaemonRuntime struct {
 	systemLocked        bool
 	idleSince           time.Time
 	idleWarned          bool
-	breakRelockUntil    time.Time
+	relockUntil         time.Time
 	completionAlertStop chan struct{}
 }
 
@@ -166,7 +156,7 @@ func (r *DaemonRuntime) CancelCurrentTask() (*state.Task, error) {
 	task.Status = state.StatusCancelled
 	r.current = nil
 	r.stopTaskTimersLocked()
-	r.breakRelockUntil = time.Time{}
+	r.relockUntil = time.Time{}
 	r.stopCompletionAlertLocked()
 
 	now := r.clock.Now()
@@ -179,7 +169,7 @@ func (r *DaemonRuntime) CancelCurrentTask() (*state.Task, error) {
 func (r *DaemonRuntime) Status() string {
 	r.mu.Lock()
 	current := r.current
-	relockUntil := r.breakRelockUntil
+	relockUntil := r.relockUntil
 	r.mu.Unlock()
 
 	now := r.clock.Now()
@@ -285,11 +275,11 @@ func (r *DaemonRuntime) OnIdleExited() {
 
 func (r *DaemonRuntime) OnScreenLocked() {
 	r.mu.Lock()
-	if r.breakRelockTimer != nil {
-		r.breakRelockTimer.Stop()
-		r.breakRelockTimer = nil
+	if r.relockTimer != nil {
+		r.relockTimer.Stop()
+		r.relockTimer = nil
 	}
-	r.breakRelockUntil = time.Time{}
+	r.relockUntil = time.Time{}
 	r.stopIdleTimersLocked()
 	r.idleSince = time.Time{}
 	r.idleWarned = false
@@ -301,6 +291,7 @@ func (r *DaemonRuntime) OnScreenUnlocked() {
 	r.stopCompletionAlertLocked()
 	now := r.clock.Now()
 	snap := r.core.Snapshot()
+	cfg := state.GetRuntimeConfig()
 
 	if r.current == nil {
 		if snap.Phase == core.PhasePendingCooldown {
@@ -308,10 +299,16 @@ func (r *DaemonRuntime) OnScreenUnlocked() {
 			return
 		}
 		if snap.Phase == core.PhaseCooldown {
-			remaining := snap.CooldownUntil.Sub(now)
+			relockDelay := cfg.RelockDelay
+			if r.relockTimer != nil {
+				r.relockTimer.Stop()
+			}
+			r.relockUntil = now.Add(relockDelay)
+			r.relockTimer = r.clock.AfterFunc(relockDelay, func() {
+				r.lockScreen()
+			})
 			r.mu.Unlock()
-			r.notify("Cooldown Active", fmt.Sprintf("Cooldown active. Wait %s before starting a new task.", remaining.Round(time.Second)))
-			r.lockScreen()
+			r.notify("Cooldown Active", fmt.Sprintf("Cooldown active. Locking again in %s.", relockDelay.Round(time.Second)))
 			return
 		}
 		r.resumeIdleTrackingIfNeededLocked(now)
@@ -324,19 +321,19 @@ func (r *DaemonRuntime) OnScreenUnlocked() {
 		return
 	}
 
-	notifyUser := r.breakRelockTimer == nil
-	if r.breakRelockTimer != nil {
-		r.breakRelockTimer.Stop()
+	notifyUser := r.relockTimer == nil
+	if r.relockTimer != nil {
+		r.relockTimer.Stop()
 	}
-	relockDelay := state.GetRuntimeConfig().BreakRelockDelay
-	r.breakRelockUntil = now.Add(relockDelay)
-	r.breakRelockTimer = r.clock.AfterFunc(relockDelay, func() {
+	relockDelay := cfg.RelockDelay
+	r.relockUntil = now.Add(relockDelay)
+	r.relockTimer = r.clock.AfterFunc(relockDelay, func() {
 		r.relockIfBreak()
 	})
 	r.mu.Unlock()
 
 	if notifyUser {
-		r.notify("Break Active", "Break is active. Locking again in 30 seconds.")
+		r.notify("Break Active", fmt.Sprintf("Break is active. Locking again in %s.", relockDelay.Round(time.Second)))
 	}
 }
 
@@ -377,34 +374,35 @@ func (r *DaemonRuntime) completeCurrentTask(taskID int) {
 	task.Status = state.StatusCompleted
 	r.current = nil
 	r.stopTaskTimersLocked()
-	r.breakRelockUntil = time.Time{}
+	r.relockUntil = time.Time{}
 
 	now := r.clock.Now()
-	cooldownDuration := cooldownDurationFor(task.Duration, state.GetRuntimeConfig())
-	cooldownStartAt := now.Add(cooldownStartDelay)
+	cfg := state.GetRuntimeConfig()
+	cooldownDuration := cooldownDurationFor(task.Duration, cfg)
+	cooldownStartAt := now.Add(cfg.CooldownStartDelay)
 	r.tracef("task_completed id=%d title=%q cooldown_start=%s cooldown_duration=%s", task.ID, task.Title, cooldownStartAt.Format(time.RFC3339Nano), cooldownDuration)
 	r.PublishCoreEvent(core.Event{Type: core.EventTaskCompleted, At: now, CooldownStartAt: cooldownStartAt, CooldownDuration: cooldownDuration})
 
 	if r.cooldownStartTimer != nil {
 		r.cooldownStartTimer.Stop()
 	}
-	r.cooldownStartTimer = r.clock.AfterFunc(cooldownStartDelay, func() {
+	r.cooldownStartTimer = r.clock.AfterFunc(cfg.CooldownStartDelay, func() {
 		r.lockScreen()
 	})
-	r.tracef("timer_set name=cooldown_start in=%s", cooldownStartDelay)
+	r.tracef("timer_set name=cooldown_start in=%s", cfg.CooldownStartDelay)
 	if r.cooldownEndTimer != nil {
 		r.cooldownEndTimer.Stop()
 	}
-	r.cooldownEndTimer = r.clock.AfterFunc(cooldownStartDelay+cooldownDuration, func() {
+	r.cooldownEndTimer = r.clock.AfterFunc(cfg.CooldownStartDelay+cooldownDuration, func() {
 		r.startCompletionAlert()
 	})
-	r.tracef("timer_set name=cooldown_end in=%s", cooldownStartDelay+cooldownDuration)
+	r.tracef("timer_set name=cooldown_end in=%s", cfg.CooldownStartDelay+cooldownDuration)
 	r.mu.Unlock()
 
 	if err := state.AppendCompletedTask(*task); err != nil {
 		fmt.Printf("failed to persist completed task: %v\n", err)
 	}
-	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in 10s; locking screen.", task.Title))
+	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in %s; locking screen.", task.Title, cfg.CooldownStartDelay.Round(time.Second)))
 }
 
 func (r *DaemonRuntime) notifyBreakComing(taskID int) {
@@ -448,11 +446,11 @@ func (r *DaemonRuntime) endBreak(taskID int) {
 		r.breakEndTimer.Stop()
 		r.breakEndTimer = nil
 	}
-	if r.breakRelockTimer != nil {
-		r.breakRelockTimer.Stop()
-		r.breakRelockTimer = nil
+	if r.relockTimer != nil {
+		r.relockTimer.Stop()
+		r.relockTimer = nil
 	}
-	r.breakRelockUntil = time.Time{}
+	r.relockUntil = time.Time{}
 	r.tracef("break_ended task_id=%d", taskID)
 	r.PublishCoreEvent(core.Event{Type: core.EventBreakEnded, At: r.clock.Now()})
 	r.mu.Unlock()
@@ -471,7 +469,7 @@ func (r *DaemonRuntime) relockIfBreak() {
 		r.mu.Unlock()
 		return
 	}
-	r.breakRelockUntil = time.Time{}
+	r.relockUntil = time.Time{}
 	r.mu.Unlock()
 	r.lockScreen()
 }
@@ -619,9 +617,9 @@ func (r *DaemonRuntime) stopTaskTimersLocked() {
 		r.breakEndTimer.Stop()
 		r.breakEndTimer = nil
 	}
-	if r.breakRelockTimer != nil {
-		r.breakRelockTimer.Stop()
-		r.breakRelockTimer = nil
+	if r.relockTimer != nil {
+		r.relockTimer.Stop()
+		r.relockTimer = nil
 	}
 	if r.cooldownStartTimer != nil {
 		r.cooldownStartTimer.Stop()

@@ -19,13 +19,14 @@ Create `focus.dev.json` in the repo root:
     "long": "6s",
     "deep": "7s"
   },
+  "relock_delay": "2s",
+  "cooldown_start_delay": "10s",
   "break": {
     "long_start": "5s",
     "deep_start": "10s",
     "warning": "2s",
     "long_duration": "3s",
-    "deep_duration": "4s",
-    "relock_delay": "2s"
+    "deep_duration": "4s"
   },
   "idle": {
     "warn_after": "5s",
@@ -61,7 +62,7 @@ Expected flow:
 
 1. Break starts after about 5 seconds.
 2. The screen locks when break starts.
-3. If you unlock during break, it re-locks after the relock delay.
+3. If you unlock during break or cooldown, it re-locks after the relock delay.
 4. Break ends after 3 seconds and unlocks the screen.
 5. The completion sound repeats every second while the user is idle.
 6. The sound stops when `focus-events` reports user activity again or when the screen unlocks.

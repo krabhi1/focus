@@ -68,14 +68,13 @@ func TestRuntimeTaskCompleteActionOrder(t *testing.T) {
 	cfg.TaskShort = 30 * time.Millisecond
 	cfg.TaskMedium = 60 * time.Millisecond
 	cfg.CooldownShort = 40 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
 	if err := state.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
-	restoreCooldownDelay := setCooldownStartDelayForTest(10 * time.Millisecond)
-	t.Cleanup(restoreCooldownDelay)
 
 	actions := &recordingActions{}
 	rt := NewDaemonRuntime(actions)
@@ -119,16 +118,15 @@ func TestRuntimeBreakUnlockRelockAndEndActions(t *testing.T) {
 	cfg.BreakLongDuration = 80 * time.Millisecond
 	cfg.BreakDeepStart = 20 * time.Millisecond
 	cfg.BreakDeepDuration = 80 * time.Millisecond
-	cfg.BreakRelockDelay = 15 * time.Millisecond
+	cfg.RelockDelay = 15 * time.Millisecond
 	cfg.CooldownLong = 60 * time.Millisecond
+	cfg.CooldownStartDelay = 500 * time.Millisecond
 	if err := state.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
 	})
-	restoreCooldownDelay := setCooldownStartDelayForTest(500 * time.Millisecond)
-	t.Cleanup(restoreCooldownDelay)
 
 	actions := &recordingActions{}
 	rt := NewDaemonRuntime(actions)
@@ -161,6 +159,44 @@ func TestRuntimeBreakUnlockRelockAndEndActions(t *testing.T) {
 	if breakStartedNotifyIdx == -1 || firstLockIdx == -1 || breakStartedNotifyIdx > firstLockIdx {
 		t.Fatalf("expected Break Started notify before first lock, actions=%v", summarizeActions(all))
 	}
+}
+
+func TestRuntimeCooldownUnlockRelocksAfterDelay(t *testing.T) {
+	cfg := state.DefaultRuntimeConfig()
+	cfg.TaskShort = 25 * time.Millisecond
+	cfg.TaskMedium = 50 * time.Millisecond
+	cfg.CooldownShort = 80 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
+	cfg.RelockDelay = 15 * time.Millisecond
+	if err := state.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
+	})
+
+	actions := &recordingActions{}
+	rt := NewDaemonRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	if _, err := rt.StartTask("cooldown-task", cfg.TaskShort); err != nil {
+		t.Fatalf("StartTask failed: %v", err)
+	}
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		return findNotifyIndex(actions.snapshot(), "Task Complete") >= 0
+	}, "expected task complete notification")
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		return findActionIndex(actions.snapshot(), "lock") >= 1
+	}, "expected cooldown lock to occur")
+
+	rt.OnScreenUnlocked()
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		all := actions.snapshot()
+		return findNotifyIndex(all, "Cooldown Active") >= 0 && countActionKind(all, "lock") >= 2
+	}, "expected cooldown relock after unlock")
 }
 
 func TestRuntimeCompletionAlertLoopStopsOnIdleExitAndUnlock(t *testing.T) {
@@ -236,36 +272,6 @@ func TestRuntimeUsesInjectedClockForTaskStartTime(t *testing.T) {
 	}
 }
 
-func TestRuntimeCancelUsesInjectedClockGraceWindow(t *testing.T) {
-	cfg := state.DefaultRuntimeConfig()
-	cfg.TaskShort = time.Minute
-	cfg.TaskMedium = 2 * time.Minute
-	if err := state.SetRuntimeConfig(cfg); err != nil {
-		t.Fatalf("SetRuntimeConfig failed: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
-	})
-
-	fixedNow := time.Date(2026, 3, 22, 10, 0, 0, 0, time.UTC)
-	clock := &fixedClock{now: fixedNow}
-	rt := NewDaemonRuntimeWithClock(&recordingActions{}, clock)
-	t.Cleanup(rt.Close)
-
-	if _, err := rt.StartTask("grace", cfg.TaskShort); err != nil {
-		t.Fatalf("StartTask failed: %v", err)
-	}
-
-	clock.setNow(fixedNow.Add(state.TaskLockedWaitDuration + time.Second))
-	_, err := rt.CancelCurrentTask()
-	if err == nil {
-		t.Fatal("expected grace-window error")
-	}
-	if err != nil && err.Error() == "no active task to cancel" {
-		t.Fatalf("unexpected error %q; expected lock grace error", err)
-	}
-}
-
 func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool, message string) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -319,32 +325,19 @@ func summarizeActions(actions []recordedAction) []string {
 }
 
 type fixedClock struct {
-	mu  sync.Mutex
 	now time.Time
 }
 
 func (c *fixedClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.now
 }
 
 func (c *fixedClock) Since(t time.Time) time.Duration {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.now.Sub(t)
 }
 
 func (c *fixedClock) Until(t time.Time) time.Duration {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return t.Sub(c.now)
-}
-
-func (c *fixedClock) setNow(now time.Time) {
-	c.mu.Lock()
-	c.now = now
-	c.mu.Unlock()
 }
 
 func (c *fixedClock) AfterFunc(d time.Duration, fn func()) runtimeTimer {

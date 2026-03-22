@@ -12,11 +12,13 @@ import (
 )
 
 type File struct {
-	Task     taskJSON     `json:"task"`
-	Cooldown cooldownJSON `json:"cooldown"`
-	Break    breakJSON    `json:"break"`
-	Idle     idleJSON     `json:"idle"`
-	Alert    alertJSON    `json:"alert"`
+	Task               taskJSON     `json:"task"`
+	Cooldown           cooldownJSON `json:"cooldown"`
+	Break              breakJSON    `json:"break"`
+	Idle               idleJSON     `json:"idle"`
+	Alert              alertJSON    `json:"alert"`
+	RelockDelay        string       `json:"relock_delay"`
+	CooldownStartDelay string       `json:"cooldown_start_delay"`
 }
 
 type taskJSON struct {
@@ -38,7 +40,6 @@ type breakJSON struct {
 	Warning      string `json:"warning"`
 	LongDuration string `json:"long_duration"`
 	DeepDuration string `json:"deep_duration"`
-	RelockDelay  string `json:"relock_delay"`
 }
 
 type idleJSON struct {
@@ -60,12 +61,13 @@ type Overrides struct {
 	CooldownLong  *time.Duration
 	CooldownDeep  *time.Duration
 
-	BreakLongStart    *time.Duration
-	BreakDeepStart    *time.Duration
-	BreakWarning      *time.Duration
-	BreakLongDuration *time.Duration
-	BreakDeepDuration *time.Duration
-	BreakRelockDelay  *time.Duration
+	BreakLongStart     *time.Duration
+	BreakDeepStart     *time.Duration
+	BreakWarning       *time.Duration
+	BreakLongDuration  *time.Duration
+	BreakDeepDuration  *time.Duration
+	RelockDelay        *time.Duration
+	CooldownStartDelay *time.Duration
 
 	IdleWarnAfter *time.Duration
 	IdleLockAfter *time.Duration
@@ -98,6 +100,9 @@ func Load(path string) (File, bool, error) {
 			return File{}, false, nil
 		}
 		return File{}, false, fmt.Errorf("read config: %w", err)
+	}
+	if err := rejectLegacyBreakRelockDelay(data); err != nil {
+		return File{}, true, err
 	}
 
 	var cfg File
@@ -148,8 +153,11 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	if err := applyDuration(&resolved.BreakDeepDuration, fileCfg.Break.DeepDuration); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid break.deep_duration: %w", err)
 	}
-	if err := applyDuration(&resolved.BreakRelockDelay, fileCfg.Break.RelockDelay); err != nil {
-		return state.RuntimeConfig{}, fmt.Errorf("invalid break.relock_delay: %w", err)
+	if err := applyDuration(&resolved.RelockDelay, fileCfg.RelockDelay); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid relock_delay: %w", err)
+	}
+	if err := applyDuration(&resolved.CooldownStartDelay, fileCfg.CooldownStartDelay); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid cooldown_start_delay: %w", err)
 	}
 
 	if err := applyDuration(&resolved.IdleWarnAfter, fileCfg.Idle.WarnAfter); err != nil {
@@ -175,7 +183,8 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	applyOverride(&resolved.BreakWarning, overrides.BreakWarning)
 	applyOverride(&resolved.BreakLongDuration, overrides.BreakLongDuration)
 	applyOverride(&resolved.BreakDeepDuration, overrides.BreakDeepDuration)
-	applyOverride(&resolved.BreakRelockDelay, overrides.BreakRelockDelay)
+	applyOverride(&resolved.RelockDelay, overrides.RelockDelay)
+	applyOverride(&resolved.CooldownStartDelay, overrides.CooldownStartDelay)
 	applyOverride(&resolved.IdleWarnAfter, overrides.IdleWarnAfter)
 	applyOverride(&resolved.IdleLockAfter, overrides.IdleLockAfter)
 	applyOverride(&resolved.EventsIdleThreshold, overrides.EventsIdleThreshold)
@@ -209,4 +218,23 @@ func applyOverride(dst *time.Duration, value *time.Duration) {
 	if value != nil {
 		*dst = *value
 	}
+}
+
+func rejectLegacyBreakRelockDelay(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	breakRaw, ok := raw["break"]
+	if !ok {
+		return nil
+	}
+	var breakFields map[string]json.RawMessage
+	if err := json.Unmarshal(breakRaw, &breakFields); err != nil {
+		return nil
+	}
+	if _, ok := breakFields["relock_delay"]; ok {
+		return fmt.Errorf("legacy break.relock_delay is not supported; use top-level relock_delay")
+	}
+	return nil
 }

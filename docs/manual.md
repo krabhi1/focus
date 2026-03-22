@@ -52,13 +52,14 @@ Example:
     "long": "10m",
     "deep": "15m"
   },
+  "relock_delay": "30s",
+  "cooldown_start_delay": "10s",
   "break": {
     "long_start": "25m",
     "deep_start": "45m",
     "warning": "2m",
     "long_duration": "5m",
-    "deep_duration": "10m",
-    "relock_delay": "30s"
+    "deep_duration": "10m"
   },
   "idle": {
     "warn_after": "3m",
@@ -93,6 +94,18 @@ Cooldown starts after a task completes.
 
 The daemon resolves cooldown from the task duration.
 
+### `relock_delay`
+
+Shared relock delay used when the user unlocks during break or cooldown.
+
+- `relock_delay`: how long to wait before locking again after an unlock during break or cooldown
+
+### `cooldown_start_delay`
+
+Delay after task completion before cooldown begins.
+
+- `cooldown_start_delay`: how long to wait after task completion before cooldown starts
+
 ### `break`
 
 Break settings apply to long and deep tasks.
@@ -102,7 +115,6 @@ Break settings apply to long and deep tasks.
 - `break.warning`: reminder before break starts
 - `break.long_duration`: how long the long-task break lasts
 - `break.deep_duration`: how long the deep-task break lasts
-- `break.relock_delay`: delay before relocking if the screen is unlocked during break
 
 Important invariants:
 
@@ -112,8 +124,8 @@ Important invariants:
 - `break.deep_start < task.deep`
 - `break.long_start + break.long_duration < task.long`
 - `break.deep_start + break.deep_duration < task.deep`
-- `break.relock_delay < break.long_duration`
-- `break.relock_delay < break.deep_duration`
+- `relock_delay < break.long_duration`
+- `relock_delay < break.deep_duration`
 
 ### `idle`
 
@@ -189,7 +201,8 @@ Common flags:
 - `--break-warning <duration>`: override `break.warning`
 - `--break-long-duration <duration>`: override `break.long_duration`
 - `--break-deep-duration <duration>`: override `break.deep_duration`
-- `--break-relock-delay <duration>`: override `break.relock_delay`
+- `--relock-delay <duration>`: override `relock_delay`
+- `--cooldown-start-delay <duration>`: override `cooldown_start_delay`
 - `--idle-warn-after <duration>`: override `idle.warn_after`
 - `--idle-lock-after <duration>`: override `idle.lock_after`
 - `--completion-alert-repeat-interval <duration>`: override `alert.repeat_interval`
@@ -409,13 +422,14 @@ Typical values are long enough to match real work sessions:
     "long": "10m",
     "deep": "15m"
   },
+  "relock_delay": "30s",
+  "cooldown_start_delay": "10s",
   "break": {
     "long_start": "25m",
     "deep_start": "45m",
     "warning": "2m",
     "long_duration": "5m",
-    "deep_duration": "10m",
-    "relock_delay": "30s"
+    "deep_duration": "10m"
   },
   "idle": {
     "warn_after": "3m",
@@ -444,13 +458,14 @@ Use a local `focus.dev.json` when you want to test the full flow quickly:
     "long": "6s",
     "deep": "7s"
   },
+  "relock_delay": "2s",
+  "cooldown_start_delay": "10s",
   "break": {
     "long_start": "5s",
     "deep_start": "10s",
     "warning": "2s",
     "long_duration": "3s",
-    "deep_duration": "4s",
-    "relock_delay": "2s"
+    "deep_duration": "4s"
   },
   "idle": {
     "warn_after": "5s",

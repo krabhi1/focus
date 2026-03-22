@@ -141,7 +141,8 @@ func parseDaemonOptions() daemonOptions {
 	opts.overrides.BreakWarning = fs.Duration("break-warning", 0, "Override break.warning duration")
 	opts.overrides.BreakLongDuration = fs.Duration("break-long-duration", 0, "Override break.long_duration duration")
 	opts.overrides.BreakDeepDuration = fs.Duration("break-deep-duration", 0, "Override break.deep_duration duration")
-	opts.overrides.BreakRelockDelay = fs.Duration("break-relock-delay", 0, "Override break.relock_delay duration")
+	opts.overrides.RelockDelay = fs.Duration("relock-delay", 0, "Override relock_delay duration")
+	opts.overrides.CooldownStartDelay = fs.Duration("cooldown-start-delay", 0, "Override cooldown_start_delay duration")
 	opts.overrides.IdleWarnAfter = fs.Duration("idle-warn-after", 0, "Override idle.warn_after duration")
 	opts.overrides.IdleLockAfter = fs.Duration("idle-lock-after", 0, "Override idle.lock_after duration")
 	opts.overrides.EventsIdleThreshold = fs.Duration("events-idle-threshold", 0, "Override events.idle_threshold duration")
@@ -201,7 +202,8 @@ func normalizeDurationOverrides(overrides *config.Overrides) {
 	overrides.BreakWarning = normalize(overrides.BreakWarning)
 	overrides.BreakLongDuration = normalize(overrides.BreakLongDuration)
 	overrides.BreakDeepDuration = normalize(overrides.BreakDeepDuration)
-	overrides.BreakRelockDelay = normalize(overrides.BreakRelockDelay)
+	overrides.RelockDelay = normalize(overrides.RelockDelay)
+	overrides.CooldownStartDelay = normalize(overrides.CooldownStartDelay)
 	overrides.IdleWarnAfter = normalize(overrides.IdleWarnAfter)
 	overrides.IdleLockAfter = normalize(overrides.IdleLockAfter)
 	overrides.EventsIdleThreshold = normalize(overrides.EventsIdleThreshold)
@@ -262,7 +264,7 @@ func consumeHelperEvents(eventCh <-chan events.Event, runtime *DaemonRuntime) {
 
 func logRuntimeConfig(cfg state.RuntimeConfig) {
 	log.Printf(
-		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] idle=[warn:%s lock:%s] events=[threshold:%s poll:%s] alert=[repeat:%s]",
+		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] idle=[warn:%s lock:%s] events=[threshold:%s poll:%s] alert=[repeat:%s]",
 		cfg.TaskShort,
 		cfg.TaskMedium,
 		cfg.TaskLong,
@@ -270,12 +272,13 @@ func logRuntimeConfig(cfg state.RuntimeConfig) {
 		cfg.CooldownShort,
 		cfg.CooldownLong,
 		cfg.CooldownDeep,
+		cfg.CooldownStartDelay,
 		cfg.BreakLongStart,
 		cfg.BreakDeepStart,
 		cfg.BreakLongDuration,
 		cfg.BreakDeepDuration,
 		cfg.BreakWarning,
-		cfg.BreakRelockDelay,
+		cfg.RelockDelay,
 		cfg.IdleWarnAfter,
 		cfg.IdleLockAfter,
 		cfg.EventsIdleThreshold,

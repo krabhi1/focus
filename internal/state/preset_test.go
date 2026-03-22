@@ -20,7 +20,8 @@ func TestResolveTaskPresetDuration(t *testing.T) {
 	cfg.BreakDeepStart = 24 * time.Second
 	cfg.BreakLongDuration = 6 * time.Second
 	cfg.BreakDeepDuration = 10 * time.Second
-	cfg.BreakRelockDelay = 1 * time.Second
+	cfg.RelockDelay = 1 * time.Second
+	cfg.CooldownStartDelay = 3 * time.Second
 	if err := SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
