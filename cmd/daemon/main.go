@@ -40,7 +40,6 @@ func run() error {
 	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
 
-	socketPath := ""
 	applyConfig := func() error {
 		return loadDaemonConfig(opts)
 	}
@@ -51,6 +50,16 @@ func run() error {
 	warnMissingRuntimeDependencies(exec.LookPath)
 
 	srv := NewServer(state.Get(), sys.RealActions{}, applyConfig)
+	configPath, err := resolvedConfigPath(opts)
+	if err != nil {
+		return err
+	}
+	socketPath := state.DefaultSocketPath()
+	historyPath, err := state.DefaultHistoryPath()
+	if err != nil {
+		return err
+	}
+	log.Printf("paths config=%s socket=%s history=%s", configPath, socketPath, historyPath)
 
 	if err := state.LoadHistoryFromDisk(); err != nil {
 		log.Printf("warning: failed to load persisted history: %v", err)
@@ -63,8 +72,6 @@ func run() error {
 	go consumeHelperEvents(listener.Events)
 	helperFatal := make(chan error, 1)
 	go monitorHelperErrors(listener.Errors, cancel, helperFatal)
-
-	socketPath = state.DefaultSocketPath()
 
 	if err := ensureSocketPathAvailable(socketPath); err != nil {
 		return fmt.Errorf("socket path setup failed: %w", err)
@@ -135,13 +142,9 @@ func parseDaemonOptions() daemonOptions {
 }
 
 func loadDaemonConfig(opts daemonOptions) error {
-	configPath := opts.configPath
-	if configPath == "" {
-		defaultPath, err := config.DefaultPath()
-		if err != nil {
-			return err
-		}
-		configPath = defaultPath
+	configPath, err := resolvedConfigPath(opts)
+	if err != nil {
+		return err
 	}
 
 	fileCfg, _, err := config.Load(configPath)
@@ -158,6 +161,13 @@ func loadDaemonConfig(opts daemonOptions) error {
 	}
 
 	return nil
+}
+
+func resolvedConfigPath(opts daemonOptions) (string, error) {
+	if opts.configPath != "" {
+		return opts.configPath, nil
+	}
+	return config.DefaultPath()
 }
 
 func normalizeDurationOverrides(overrides *config.Overrides) {

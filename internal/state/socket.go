@@ -8,6 +8,9 @@ import (
 
 // DefaultSocketPath returns the default daemon unix socket path for the current user.
 func DefaultSocketPath() string {
+	if path := os.Getenv("FOCUS_SOCKET_PATH"); path != "" {
+		return path
+	}
 	return resolveSocketPath(os.Getenv("XDG_RUNTIME_DIR"), os.Getuid())
 }
 

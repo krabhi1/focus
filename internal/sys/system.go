@@ -82,7 +82,7 @@ func resolveAssetPath(path string) string {
 }
 
 func realNotify(title, message string) {
-	cmd := exec.Command("notify-send", "-i", "dialog-information", title, message)
+	cmd := exec.Command("notify-send", "-e", "-t", "2000", "-i", "dialog-information", title, message)
 	err := cmd.Run()
 	if err != nil {
 		fmt.Printf("Error sending notification: %v\n", err)

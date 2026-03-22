@@ -12,6 +12,10 @@ import (
 
 const historyFileEnv = "FOCUS_HISTORY_FILE"
 
+func DefaultHistoryPath() (string, error) {
+	return historyFilePath()
+}
+
 func historyFilePath() (string, error) {
 	if path := os.Getenv(historyFileEnv); path != "" {
 		return path, nil

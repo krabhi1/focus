@@ -59,7 +59,10 @@ func DefaultPath() (string, error) {
 	if p := os.Getenv("FOCUS_CONFIG"); p != "" {
 		return p, nil
 	}
+	return defaultPath()
+}
 
+func defaultPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user home: %w", err)

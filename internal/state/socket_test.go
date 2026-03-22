@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func TestDefaultSocketPathUsesOverrideEnv(t *testing.T) {
+	t.Setenv("FOCUS_SOCKET_PATH", "/tmp/focus-dev.sock")
+
+	got := DefaultSocketPath()
+	want := "/tmp/focus-dev.sock"
+	if got != want {
+		t.Fatalf("DefaultSocketPath() = %q, want %q", got, want)
+	}
+}
+
 func TestResolveSocketPathUsesXDGRuntimeDir(t *testing.T) {
 	got := resolveSocketPath("/tmp/runtime", 1000)
 	want := filepath.Join("/tmp/runtime", "focus", "focus.sock")
