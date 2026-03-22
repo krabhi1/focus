@@ -61,16 +61,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("paths config=%s socket=%s history=%s", configPath, socketPath, historyPath)
+	if traceFlowEnabled() {
+		log.Printf("paths config=%s socket=%s history=%s", configPath, socketPath, historyPath)
+	}
 
 	if err := rt.LoadHistoryFromDisk(); err != nil {
 		log.Printf("warning: failed to load persisted history: %v", err)
-	} else {
+	} else if traceFlowEnabled() {
 		log.Printf("history loaded today_count=%d", rt.HistoryCount())
 	}
 
 	runtimeCfg := state.GetRuntimeConfig()
-	logRuntimeConfig(runtimeCfg)
+	if traceFlowEnabled() {
+		logRuntimeConfig(runtimeCfg)
+	}
 	listener, err := events.Start(ctx, int(runtimeCfg.EventsIdleThreshold/time.Second), int(runtimeCfg.EventsIdlePoll/time.Second))
 	if err != nil {
 		return fmt.Errorf("focus-events startup failed: %w", err)
@@ -236,6 +240,9 @@ func ensureSocketPathAvailable(path string) error {
 func consumeHelperEvents(eventCh <-chan events.Event, runtime *DaemonRuntime) {
 	for event := range eventCh {
 		now := runtime.Now()
+		if traceFlowEnabled() {
+			log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
+		}
 		switch event.Kind {
 		case events.KindIdle:
 			switch event.State {
@@ -258,7 +265,6 @@ func consumeHelperEvents(eventCh <-chan events.Event, runtime *DaemonRuntime) {
 				runtime.PublishCoreEvent(core.Event{Type: core.EventScreenUnlock, At: now})
 			}
 		}
-		log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
 	}
 }
 
@@ -337,6 +343,10 @@ func isHelperFatalError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "focus-events exited")
+}
+
+func traceFlowEnabled() bool {
+	return os.Getenv("FOCUS_TRACE_FLOW") == "1"
 }
 
 func warnMissingRuntimeDependencies(lookPath func(string) (string, error)) {

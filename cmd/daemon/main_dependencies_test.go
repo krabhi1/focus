@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"focus/internal/events"
 	"log"
 	"strings"
 	"testing"
@@ -83,5 +84,79 @@ func TestMonitorHelperErrorsCancelsOnFatal(t *testing.T) {
 
 	if !cancelled {
 		t.Fatal("expected cancel to be called for fatal helper error")
+	}
+}
+
+func TestConsumeHelperEventsTraceLoggingIsGated(t *testing.T) {
+	t.Setenv("FOCUS_TRACE_FLOW", "")
+
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	}()
+
+	rt := NewDaemonRuntime(nil)
+	t.Cleanup(rt.Close)
+
+	eventCh := make(chan events.Event, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		consumeHelperEvents(eventCh, rt)
+	}()
+
+	eventCh <- events.Event{Kind: events.KindScreen, State: "locked"}
+	close(eventCh)
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for helper event consumer")
+	}
+
+	if got := buf.String(); got != "" {
+		t.Fatalf("log output = %q, want empty output when trace is disabled", got)
+	}
+}
+
+func TestConsumeHelperEventsTraceLoggingEnabled(t *testing.T) {
+	t.Setenv("FOCUS_TRACE_FLOW", "1")
+
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	}()
+
+	rt := NewDaemonRuntime(nil)
+	t.Cleanup(rt.Close)
+
+	eventCh := make(chan events.Event, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		consumeHelperEvents(eventCh, rt)
+	}()
+
+	eventCh <- events.Event{Kind: events.KindScreen, State: "locked"}
+	close(eventCh)
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for helper event consumer")
+	}
+
+	if got := buf.String(); !strings.Contains(got, "focus-events event=screen state=locked") {
+		t.Fatalf("log output = %q, want focus-events trace log", got)
 	}
 }
