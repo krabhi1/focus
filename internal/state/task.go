@@ -39,6 +39,7 @@ func (s *DaemonState) NewTask(title string, duration time.Duration) (*Task, erro
 
 	s.currentTask = task
 	s.taskHistory = append(s.taskHistory, task)
+	s.pruneHistoryToTodayLocked(time.Now())
 	s.setupTimers(task)
 
 	return task, nil
@@ -107,6 +108,10 @@ func (s *DaemonState) completeCurrentTask(taskID int) {
 	actions := s.actionsLocked()
 	s.cleanupTask()
 	s.mu.Unlock()
+
+	if err := appendCompletedTaskToLog(task); err != nil {
+		fmt.Printf("failed to persist completed task: %v\n", err)
+	}
 
 	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished.", task.Title))
 	time.Sleep(5 * time.Second)
@@ -307,6 +312,8 @@ func (s *DaemonState) History() []Task {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.pruneHistoryToTodayLocked(time.Now())
+
 	history := make([]Task, 0, len(s.taskHistory))
 	for _, task := range s.taskHistory {
 		if task == nil {
@@ -315,6 +322,25 @@ func (s *DaemonState) History() []Task {
 		history = append(history, *task)
 	}
 	return history
+}
+
+func (s *DaemonState) pruneHistoryToTodayLocked(now time.Time) {
+	if len(s.taskHistory) == 0 {
+		return
+	}
+	todayStart := startOfToday(now)
+	todayEnd := todayStart.Add(24 * time.Hour)
+	filtered := make([]*Task, 0, len(s.taskHistory))
+	for _, task := range s.taskHistory {
+		if task == nil {
+			continue
+		}
+		if task.StartTime.Before(todayStart) || !task.StartTime.Before(todayEnd) {
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	s.taskHistory = filtered
 }
 
 func (s *DaemonState) breakRemainingLocked(now time.Time) time.Duration {

@@ -52,6 +52,10 @@ func run() error {
 
 	srv := NewServer(state.Get(), sys.RealActions{}, applyConfig)
 
+	if err := state.LoadHistoryFromDisk(); err != nil {
+		log.Printf("warning: failed to load persisted history: %v", err)
+	}
+
 	listener, err := events.Start(ctx, idleThresholdSeconds, idlePollSeconds)
 	if err != nil {
 		return fmt.Errorf("focus-events startup failed: %w", err)
