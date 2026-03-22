@@ -174,46 +174,19 @@ Note: release updates currently target `linux/amd64`, matching the published rel
 
 ## Configuration
 
-Focus can load runtime settings from JSON config:
+Focus can load runtime settings from JSON config.
+
+Full reference:
+
+- [Config and commands manual](docs/manual.md)
 
 - Default path: `~/.config/focus/config.json`
 - Override config path: `FOCUS_CONFIG=/path/to/config.json`
-
-Example:
-
-```json
-{
-  "cooldown": {
-    "short": "5m",
-    "long": "10m",
-    "deep": "15m"
-  },
-  "break": {
-    "long_start": "25m",
-    "deep_start": "45m",
-    "warning": "2m",
-    "long_duration": "5m",
-    "deep_duration": "10m",
-    "relock_delay": "30s"
-  },
-  "idle": {
-    "warn_after": "3m",
-    "lock_after": "5m",
-    "poll_interval": "30s"
-  }
-}
-```
 
 Apply changes without restarting daemon:
 
 ```bash
 focus reload
-```
-
-Daemon CLI overrides (highest priority):
-
-```bash
-focusd --idle-lock-after 7m --break-warning 90s
 ```
 
 Optional install flags:
@@ -231,6 +204,11 @@ For a source checkout, use:
 ```
 
 Current prebuilt release target: `linux/amd64`.
+
+## Manual Docs
+
+- [Config and commands manual](docs/manual.md)
+- [Fast smoke test guide](docs/smoke-test.md)
 
 ## Verify release publishing
 

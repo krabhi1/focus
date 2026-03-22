@@ -20,11 +20,6 @@ import (
 	"time"
 )
 
-const (
-	idleThresholdSeconds = 10
-	idlePollSeconds      = 5
-)
-
 func main() {
 	if err := run(); err != nil {
 		log.Printf("fatal: %v", err)
@@ -65,7 +60,8 @@ func run() error {
 		log.Printf("warning: failed to load persisted history: %v", err)
 	}
 
-	listener, err := events.Start(ctx, idleThresholdSeconds, idlePollSeconds)
+	runtimeCfg := state.GetRuntimeConfig()
+	listener, err := events.Start(ctx, int(runtimeCfg.EventsIdleThreshold/time.Second), int(runtimeCfg.EventsIdlePoll/time.Second))
 	if err != nil {
 		return fmt.Errorf("focus-events startup failed: %w", err)
 	}
@@ -138,7 +134,8 @@ func parseDaemonOptions() daemonOptions {
 	opts.overrides.BreakRelockDelay = fs.Duration("break-relock-delay", 0, "Override break.relock_delay duration")
 	opts.overrides.IdleWarnAfter = fs.Duration("idle-warn-after", 0, "Override idle.warn_after duration")
 	opts.overrides.IdleLockAfter = fs.Duration("idle-lock-after", 0, "Override idle.lock_after duration")
-	opts.overrides.IdlePollInterval = fs.Duration("idle-poll-interval", 0, "Override idle.poll_interval duration")
+	opts.overrides.EventsIdleThreshold = fs.Duration("events-idle-threshold", 0, "Override events.idle_threshold duration")
+	opts.overrides.EventsIdlePoll = fs.Duration("events-idle-poll", 0, "Override events.idle_poll duration")
 	opts.overrides.CompletionAlertRepeatInterval = fs.Duration("completion-alert-repeat-interval", 0, "Override alert.repeat_interval duration")
 	_ = fs.Parse(os.Args[1:])
 	normalizeDurationOverrides(&opts.overrides)
@@ -197,7 +194,8 @@ func normalizeDurationOverrides(overrides *config.Overrides) {
 	overrides.BreakRelockDelay = normalize(overrides.BreakRelockDelay)
 	overrides.IdleWarnAfter = normalize(overrides.IdleWarnAfter)
 	overrides.IdleLockAfter = normalize(overrides.IdleLockAfter)
-	overrides.IdlePollInterval = normalize(overrides.IdlePollInterval)
+	overrides.EventsIdleThreshold = normalize(overrides.EventsIdleThreshold)
+	overrides.EventsIdlePoll = normalize(overrides.EventsIdlePoll)
 	overrides.CompletionAlertRepeatInterval = normalize(overrides.CompletionAlertRepeatInterval)
 }
 

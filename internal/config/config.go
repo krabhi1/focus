@@ -17,6 +17,7 @@ type File struct {
 	Break    breakJSON    `json:"break"`
 	Idle     idleJSON     `json:"idle"`
 	Alert    alertJSON    `json:"alert"`
+	Events   eventsJSON   `json:"events"`
 }
 
 type taskJSON struct {
@@ -42,13 +43,17 @@ type breakJSON struct {
 }
 
 type idleJSON struct {
-	WarnAfter    string `json:"warn_after"`
-	LockAfter    string `json:"lock_after"`
-	PollInterval string `json:"poll_interval"`
+	WarnAfter string `json:"warn_after"`
+	LockAfter string `json:"lock_after"`
 }
 
 type alertJSON struct {
 	RepeatInterval string `json:"repeat_interval"`
+}
+
+type eventsJSON struct {
+	IdleThreshold string `json:"idle_threshold"`
+	IdlePoll      string `json:"idle_poll"`
 }
 
 type Overrides struct {
@@ -68,9 +73,11 @@ type Overrides struct {
 	BreakDeepDuration *time.Duration
 	BreakRelockDelay  *time.Duration
 
-	IdleWarnAfter    *time.Duration
-	IdleLockAfter    *time.Duration
-	IdlePollInterval *time.Duration
+	IdleWarnAfter *time.Duration
+	IdleLockAfter *time.Duration
+
+	EventsIdleThreshold *time.Duration
+	EventsIdlePoll      *time.Duration
 
 	CompletionAlertRepeatInterval *time.Duration
 }
@@ -157,8 +164,11 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	if err := applyDuration(&resolved.IdleLockAfter, fileCfg.Idle.LockAfter); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid idle.lock_after: %w", err)
 	}
-	if err := applyDuration(&resolved.IdlePollInterval, fileCfg.Idle.PollInterval); err != nil {
-		return state.RuntimeConfig{}, fmt.Errorf("invalid idle.poll_interval: %w", err)
+	if err := applyDuration(&resolved.EventsIdleThreshold, fileCfg.Events.IdleThreshold); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid events.idle_threshold: %w", err)
+	}
+	if err := applyDuration(&resolved.EventsIdlePoll, fileCfg.Events.IdlePoll); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid events.idle_poll: %w", err)
 	}
 	if err := applyDuration(&resolved.CompletionAlertRepeatInterval, fileCfg.Alert.RepeatInterval); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid alert.repeat_interval: %w", err)
@@ -180,7 +190,8 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	applyOverride(&resolved.BreakRelockDelay, overrides.BreakRelockDelay)
 	applyOverride(&resolved.IdleWarnAfter, overrides.IdleWarnAfter)
 	applyOverride(&resolved.IdleLockAfter, overrides.IdleLockAfter)
-	applyOverride(&resolved.IdlePollInterval, overrides.IdlePollInterval)
+	applyOverride(&resolved.EventsIdleThreshold, overrides.EventsIdleThreshold)
+	applyOverride(&resolved.EventsIdlePoll, overrides.EventsIdlePoll)
 	applyOverride(&resolved.CompletionAlertRepeatInterval, overrides.CompletionAlertRepeatInterval)
 
 	return resolved, nil

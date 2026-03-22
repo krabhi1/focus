@@ -1,0 +1,546 @@
+# Focus Manual: Config and Commands
+
+This document explains the runtime config and the main commands in one place.
+The README keeps only a short summary and links here for the full reference.
+
+## What Runs Where
+
+Focus has two user-facing binaries:
+
+- `focusd`: the background daemon
+- `focus`: the CLI client
+
+The daemon holds the state machine, timers, screen lock actions, notifications, and the `focus-events` helper.
+The client sends commands to the daemon over the Unix socket.
+
+## Runtime Paths
+
+These paths are resolved at runtime.
+
+- Config file: `~/.config/focus/config.json`
+- Config override: `FOCUS_CONFIG=/path/to/config.json`
+- Socket path: resolved by `state.DefaultSocketPath()`
+- Socket override: `FOCUS_SOCKET_PATH=/path/to/focus.sock`
+- History log: `~/.config/focus/history.jsonl`
+- History override: `FOCUS_HISTORY_FILE=/path/to/history.jsonl`
+
+The daemon prints the resolved config, socket, and history paths on startup.
+
+## Configuration
+
+Focus reads JSON config. The file is split into sections so each part of the flow can be tuned separately.
+
+Example:
+
+```json
+{
+  "task": {
+    "short": "15m",
+    "medium": "30m",
+    "long": "60m",
+    "deep": "90m"
+  },
+  "cooldown": {
+    "short": "5m",
+    "long": "10m",
+    "deep": "15m"
+  },
+  "break": {
+    "long_start": "25m",
+    "deep_start": "45m",
+    "warning": "2m",
+    "long_duration": "5m",
+    "deep_duration": "10m",
+    "relock_delay": "30s"
+  },
+  "idle": {
+    "warn_after": "3m",
+    "lock_after": "5m"
+  },
+  "events": {
+    "idle_threshold": "10s",
+    "idle_poll": "5s"
+  },
+  "alert": {
+    "repeat_interval": "3s"
+  }
+}
+```
+
+### `task`
+
+Task preset durations used by `focus start --duration ...`.
+
+- `task.short`: duration for `short`
+- `task.medium`: duration for `medium`
+- `task.long`: duration for `long`
+- `task.deep`: duration for `deep`
+
+These must be strictly increasing:
+
+`short < medium < long < deep`
+
+### `cooldown`
+
+Cooldown starts after a task completes.
+
+- `cooldown.short`: cooldown after a short task
+- `cooldown.long`: cooldown after a long task
+- `cooldown.deep`: cooldown after a deep task
+
+The daemon resolves cooldown from the task duration.
+
+### `break`
+
+Break settings apply to long and deep tasks.
+
+- `break.long_start`: when a long task enters break
+- `break.deep_start`: when a deep task enters break
+- `break.warning`: reminder before break starts
+- `break.long_duration`: how long the long-task break lasts
+- `break.deep_duration`: how long the deep-task break lasts
+- `break.relock_delay`: delay before relocking if the screen is unlocked during break
+
+Important invariants:
+
+- `break.warning < break.long_start`
+- `break.warning < break.deep_start`
+- `break.long_start < task.long`
+- `break.deep_start < task.deep`
+- `break.long_start + break.long_duration < task.long`
+- `break.deep_start + break.deep_duration < task.deep`
+- `break.relock_delay < break.long_duration`
+- `break.relock_delay < break.deep_duration`
+
+### `idle`
+
+Daemon-side idle policy.
+
+- `idle.warn_after`: delay after `idle entered` before warning
+- `idle.lock_after`: delay after `idle entered` before locking
+
+The daemon now uses `focus-events` idle transitions, so this section is only about what the daemon does after idle is detected.
+
+### `events`
+
+Helper-side idle detection settings for `focus-events`.
+
+- `events.idle_threshold`: how long input must be inactive before `idle entered`
+- `events.idle_poll`: how often the helper checks idle state
+
+These values control the helper that emits idle transitions. They are separate from the daemon idle policy.
+
+### `alert`
+
+Completion alert settings.
+
+- `alert.repeat_interval`: how often the completion sound repeats while the user is idle
+
+## Config Validation
+
+Focus rejects invalid timing combinations at startup.
+
+Examples:
+
+- missing or non-positive durations are rejected
+- task presets must be strictly increasing
+- break timings must fit inside the task duration
+- idle warn must be less than idle lock
+- `events.idle_threshold` and `events.idle_poll` must be positive
+- alert repeat interval must be positive
+
+If config validation fails, the daemon exits before serving requests.
+
+## Daemon Commands
+
+These are the daemon-side runtime options.
+
+### `focusd`
+
+Start the daemon from source:
+
+```bash
+go run ./cmd/daemon
+```
+
+Common flags:
+
+- `--config <path>`: load a config file instead of the default path
+- `--task-short <duration>`: override `task.short`
+- `--task-medium <duration>`: override `task.medium`
+- `--task-long <duration>`: override `task.long`
+- `--task-deep <duration>`: override `task.deep`
+- `--cooldown-short <duration>`: override `cooldown.short`
+- `--cooldown-long <duration>`: override `cooldown.long`
+- `--cooldown-deep <duration>`: override `cooldown.deep`
+- `--break-long-start <duration>`: override `break.long_start`
+- `--break-deep-start <duration>`: override `break.deep_start`
+- `--break-warning <duration>`: override `break.warning`
+- `--break-long-duration <duration>`: override `break.long_duration`
+- `--break-deep-duration <duration>`: override `break.deep_duration`
+- `--break-relock-delay <duration>`: override `break.relock_delay`
+- `--idle-warn-after <duration>`: override `idle.warn_after`
+- `--idle-lock-after <duration>`: override `idle.lock_after`
+- `--events-idle-threshold <duration>`: override `events.idle_threshold`
+- `--events-idle-poll <duration>`: override `events.idle_poll`
+- `--completion-alert-repeat-interval <duration>`: override `alert.repeat_interval`
+
+Precedence:
+
+1. CLI flag override
+2. JSON config file
+3. built-in defaults
+
+## Client Commands
+
+These are the commands users run from the `focus` client.
+
+### `focus status`
+
+Shows the current daemon state.
+
+Example:
+
+```bash
+focus status
+```
+
+Use it to see:
+
+- active task
+- cooldown remaining time
+- break state
+- relock countdown during break
+
+### `focus start`
+
+Starts a new task.
+
+Example:
+
+```bash
+focus start --name "write docs" --duration long
+```
+
+Arguments:
+
+- `--name`: task title
+- `--duration`: one of `short`, `medium`, `long`, `deep`
+
+The client sends the preset name. The daemon resolves the actual duration from config.
+
+### `focus cancel`
+
+Cancels the active task if it is still cancelable.
+
+Example:
+
+```bash
+focus cancel
+```
+
+### `focus history`
+
+Shows today’s completed task history from the persisted log.
+
+Example:
+
+```bash
+focus history
+```
+
+Current behavior:
+
+- only completed tasks are persisted
+- only today’s tasks are loaded into memory on startup
+- the history file itself is append-only
+
+### `focus reload`
+
+Reloads runtime config from disk.
+
+Example:
+
+```bash
+focus reload
+```
+
+Use this after editing the config file.
+
+### `focus doctor`
+
+Checks local setup and dependencies.
+
+Example:
+
+```bash
+focus doctor
+```
+
+This is useful for checking:
+
+- binary presence
+- daemon socket health
+- service setup
+- helper dependencies
+
+### `focus version`
+
+Prints the installed version.
+
+Example:
+
+```bash
+focus version
+```
+
+### `focus update`
+
+Updates the installed binaries.
+
+Examples:
+
+```bash
+focus update
+focus update --version v0.1.4
+focus update --prefix /custom/prefix
+focus update --yes
+```
+
+Flags:
+
+- `--version`: install a specific release tag
+- `--prefix`: use a custom install prefix
+- `--yes`: skip confirmation
+
+### `focus uninstall`
+
+Removes the installed binaries and service.
+
+Examples:
+
+```bash
+focus uninstall
+focus uninstall --prefix /custom/prefix
+```
+
+## Common Workflows
+
+### Start a task
+
+```bash
+focus start --name "write docs" --duration long
+```
+
+Use `short`, `medium`, `long`, or `deep` depending on how long you want the session to run.
+
+### Check current state
+
+```bash
+focus status
+```
+
+This shows the active task, cooldown state, or break state.
+
+### Reload config
+
+```bash
+focus reload
+```
+
+Use this after editing `config.json` or changing runtime overrides.
+
+### View today's history
+
+```bash
+focus history
+```
+
+This reads from the persisted history log and shows the entries loaded for today.
+
+### Run the manual smoke test
+
+```bash
+FOCUS_CONFIG=./focus.dev.json \
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
+FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
+go run ./cmd/daemon
+```
+
+In another terminal:
+
+```bash
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client start --name demo --duration long
+```
+
+See [manual smoke test](smoke-test.md) for the full step-by-step flow.
+
+## Production vs Dev Config
+
+### Production config
+
+Keep the normal production values in `~/.config/focus/config.json`.
+
+Typical values are long enough to match real work sessions:
+
+```json
+{
+  "task": {
+    "short": "15m",
+    "medium": "30m",
+    "long": "60m",
+    "deep": "90m"
+  },
+  "cooldown": {
+    "short": "5m",
+    "long": "10m",
+    "deep": "15m"
+  },
+  "break": {
+    "long_start": "25m",
+    "deep_start": "45m",
+    "warning": "2m",
+    "long_duration": "5m",
+    "deep_duration": "10m",
+    "relock_delay": "30s"
+  },
+  "idle": {
+    "warn_after": "3m",
+    "lock_after": "5m"
+  },
+  "events": {
+    "idle_threshold": "10s",
+    "idle_poll": "5s"
+  },
+  "alert": {
+    "repeat_interval": "3s"
+  }
+}
+```
+
+### Dev config
+
+Use a local `focus.dev.json` when you want to test the full flow quickly:
+
+```json
+{
+  "task": {
+    "short": "5s",
+    "medium": "10s",
+    "long": "20s",
+    "deep": "30s"
+  },
+  "cooldown": {
+    "short": "5s",
+    "long": "6s",
+    "deep": "7s"
+  },
+  "break": {
+    "long_start": "5s",
+    "deep_start": "10s",
+    "warning": "2s",
+    "long_duration": "3s",
+    "deep_duration": "4s",
+    "relock_delay": "2s"
+  },
+  "idle": {
+    "warn_after": "5s",
+    "lock_after": "10s"
+  },
+  "events": {
+    "idle_threshold": "5s",
+    "idle_poll": "1s"
+  },
+  "alert": {
+    "repeat_interval": "1s"
+  }
+}
+```
+
+Recommended overrides for dev runs:
+
+```bash
+FOCUS_CONFIG=./focus.dev.json \
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
+FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
+go run ./cmd/daemon
+```
+
+## Troubleshooting
+
+### Daemon is not running
+
+If `focus` says the daemon is not running:
+
+```bash
+focus doctor
+```
+
+Then start the daemon:
+
+```bash
+go run ./cmd/daemon
+```
+
+### Socket path mismatch
+
+If the client and daemon are using different socket paths, set the same value in both shells:
+
+```bash
+export FOCUS_SOCKET_PATH=/tmp/focus-dev.sock
+```
+
+### Invalid config
+
+If the daemon exits during startup, the config may have a bad duration or an invalid timing relationship.
+
+Check the config file and look for errors like:
+
+- invalid `task.*`
+- `break.warning` not before break start
+- `break` window longer than the task duration
+- `events.idle_threshold` or `events.idle_poll` set to zero or negative
+
+### Missing helper binary
+
+If idle events do not appear, verify `focus-events` is installed and on `PATH`:
+
+```bash
+focus doctor
+```
+
+The daemon depends on the helper to emit `idle entered` and `idle exited`.
+
+## Smoke-Test Workflow
+
+For a fast manual test, use a dev config with small durations and disposable paths.
+
+Typical setup:
+
+```bash
+FOCUS_CONFIG=./focus.dev.json \
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
+FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
+go run ./cmd/daemon
+```
+
+Then in another terminal:
+
+```bash
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client start --name demo --duration long
+```
+
+That lets you verify:
+
+- break start
+- break-end unlock
+- cooldown start
+- completion alert loop
+- history persistence
+
+## Notes
+
+- `focus-events` is the source of idle transitions.
+- `idle.warn_after` and `idle.lock_after` are daemon-side policy values.
+- `events.idle_threshold` and `events.idle_poll` are helper-side detection values.
+- The history log only stores completed tasks.

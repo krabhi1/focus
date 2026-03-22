@@ -25,7 +25,8 @@ type RuntimeConfig struct {
 
 	IdleWarnAfter                 time.Duration
 	IdleLockAfter                 time.Duration
-	IdlePollInterval              time.Duration
+	EventsIdleThreshold           time.Duration
+	EventsIdlePoll                time.Duration
 	CompletionAlertRepeatInterval time.Duration
 }
 
@@ -54,7 +55,8 @@ func DefaultRuntimeConfig() RuntimeConfig {
 
 		IdleWarnAfter:                 IdleWarningAfter,
 		IdleLockAfter:                 IdleLockAfter,
-		IdlePollInterval:              IdleMonitorInterval,
+		EventsIdleThreshold:           10 * time.Second,
+		EventsIdlePoll:                5 * time.Second,
 		CompletionAlertRepeatInterval: 3 * time.Second,
 	}
 }
@@ -96,7 +98,8 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		{"break.relock_delay", cfg.BreakRelockDelay},
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
-		{"idle.poll_interval", cfg.IdlePollInterval},
+		{"events.idle_threshold", cfg.EventsIdleThreshold},
+		{"events.idle_poll", cfg.EventsIdlePoll},
 		{"alert.repeat_interval", cfg.CompletionAlertRepeatInterval},
 	}
 

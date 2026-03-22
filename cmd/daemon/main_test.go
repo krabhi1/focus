@@ -152,6 +152,55 @@ func TestConnectionReloadFlow(t *testing.T) {
 	}
 }
 
+func TestLoadDaemonConfigAppliesEventsOverrides(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	body := `{
+		"task":{"short":"5s","medium":"10s","long":"20s","deep":"30s"},
+		"cooldown":{"short":"5s","long":"6s","deep":"7s"},
+		"break":{"long_start":"5s","deep_start":"10s","warning":"2s","long_duration":"3s","deep_duration":"4s","relock_delay":"2s"},
+		"idle":{"warn_after":"2s","lock_after":"4s"},
+		"alert":{"repeat_interval":"1s"},
+		"events":{"idle_threshold":"9s","idle_poll":"8s"}
+	}`
+	if err := os.WriteFile(configPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	opts := daemonOptions{configPath: configPath}
+	if err := loadDaemonConfig(opts); err != nil {
+		t.Fatalf("loadDaemonConfig failed: %v", err)
+	}
+
+	cfg := state.GetRuntimeConfig()
+	if cfg.EventsIdleThreshold != 9*time.Second {
+		t.Fatalf("EventsIdleThreshold = %s, want 9s", cfg.EventsIdleThreshold)
+	}
+	if cfg.EventsIdlePoll != 8*time.Second {
+		t.Fatalf("EventsIdlePoll = %s, want 8s", cfg.EventsIdlePoll)
+	}
+}
+
+func TestParseDaemonOptionsIncludesEventsOverrides(t *testing.T) {
+	oldArgs := os.Args
+	os.Args = []string{
+		"focusd",
+		"--events-idle-threshold", "7s",
+		"--events-idle-poll", "2s",
+	}
+	t.Cleanup(func() {
+		os.Args = oldArgs
+	})
+
+	opts := parseDaemonOptions()
+	if opts.overrides.EventsIdleThreshold == nil || *opts.overrides.EventsIdleThreshold != 7*time.Second {
+		t.Fatalf("EventsIdleThreshold override not parsed: %#v", opts.overrides.EventsIdleThreshold)
+	}
+	if opts.overrides.EventsIdlePoll == nil || *opts.overrides.EventsIdlePoll != 2*time.Second {
+		t.Fatalf("EventsIdlePoll override not parsed: %#v", opts.overrides.EventsIdlePoll)
+	}
+}
+
 func newTestState(t *testing.T) *state.DaemonState {
 	t.Helper()
 

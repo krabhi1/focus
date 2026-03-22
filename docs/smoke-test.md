@@ -29,11 +29,14 @@ Create `focus.dev.json` in the repo root:
   },
   "idle": {
     "warn_after": "5s",
-    "lock_after": "10s",
-    "poll_interval": "1s"
+    "lock_after": "10s"
   },
   "alert": {
     "repeat_interval": "1s"
+  },
+  "events": {
+    "idle_threshold": "5s",
+    "idle_poll": "1s"
   }
 }
 ```
@@ -43,9 +46,9 @@ Create `focus.dev.json` in the repo root:
 Start the daemon with disposable paths:
 
 ```bash
-FOCUS_CONFIG=./temp/focus.dev.json \
-FOCUS_SOCKET_PATH=./temp/focus-dev.sock \
-FOCUS_HISTORY_FILE=./temp/focus-history.jsonl \
+FOCUS_CONFIG=./focus.dev.json \
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
+FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
 go run ./cmd/daemon
 ```
 
@@ -54,7 +57,7 @@ go run ./cmd/daemon
 In another terminal:
 
 ```bash
-FOCUS_SOCKET_PATH=./temp/focus-dev.sock go run ./cmd/client start --name demo --duration long
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client start --name demo --duration long
 ```
 
 Expected flow:
@@ -79,5 +82,5 @@ FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client history
 ## Cleanup
 
 ```bash
-rm -f /tmp/focus-dev.sock /tmp/focus-history.jsonl
+rm -f /tmp/focus-dev.sock /tmp/focus-history.jsonl ./focus.dev.json
 ```
