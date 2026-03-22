@@ -45,6 +45,7 @@ Start the daemon with disposable paths:
 FOCUS_CONFIG=./focus.dev.json \
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
 FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
+FOCUS_TRACE_FLOW=1 \
 go run ./cmd/daemon --events-idle-threshold 5s --events-idle-poll 1s
 ```
 

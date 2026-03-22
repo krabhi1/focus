@@ -5,6 +5,8 @@ import (
 	"focus/internal/core"
 	"focus/internal/state"
 	"focus/internal/sys"
+	"log"
+	"os"
 	"sync"
 	"time"
 )
@@ -23,21 +25,23 @@ type DaemonRuntime struct {
 	mu      sync.Mutex
 	actions sys.Actions
 	core    *core.Runtime
+	clock   runtimeClock
+	trace   bool
 
 	history  []*state.Task
 	current  *state.Task
 	nextID   int
 	lockedAt time.Time
 
-	taskExpireTimer    *time.Timer
-	breakWarnTimer     *time.Timer
-	breakStartTimer    *time.Timer
-	breakEndTimer      *time.Timer
-	breakRelockTimer   *time.Timer
-	cooldownStartTimer *time.Timer
-	cooldownEndTimer   *time.Timer
-	idleWarnTimer      *time.Timer
-	idleLockTimer      *time.Timer
+	taskExpireTimer    runtimeTimer
+	breakWarnTimer     runtimeTimer
+	breakStartTimer    runtimeTimer
+	breakEndTimer      runtimeTimer
+	breakRelockTimer   runtimeTimer
+	cooldownStartTimer runtimeTimer
+	cooldownEndTimer   runtimeTimer
+	idleWarnTimer      runtimeTimer
+	idleLockTimer      runtimeTimer
 
 	idleActive          bool
 	systemLocked        bool
@@ -54,8 +58,22 @@ func NewDaemonRuntime(actions sys.Actions) *DaemonRuntime {
 	return &DaemonRuntime{
 		actions: actions,
 		core:    core.NewRuntime(core.InitialState()),
+		clock:   realRuntimeClock{},
+		trace:   os.Getenv("FOCUS_TRACE_FLOW") == "1",
 		nextID:  1,
 	}
+}
+
+func NewDaemonRuntimeWithClock(actions sys.Actions, clock runtimeClock) *DaemonRuntime {
+	rt := NewDaemonRuntime(actions)
+	if clock != nil {
+		rt.clock = clock
+	}
+	return rt
+}
+
+func (r *DaemonRuntime) SetTraceForTest(enabled bool) {
+	r.trace = enabled
 }
 
 func (r *DaemonRuntime) Close() {
@@ -68,6 +86,15 @@ func (r *DaemonRuntime) Close() {
 
 func (r *DaemonRuntime) CoreSnapshot() core.State {
 	return r.core.Snapshot()
+}
+
+func (r *DaemonRuntime) Now() time.Time {
+	return r.clock.Now()
+}
+
+func (r *DaemonRuntime) PublishCoreEvent(ev core.Event) {
+	r.tracef("core_event type=%s at=%s", ev.Type, ev.At.Format(time.RFC3339Nano))
+	r.core.Publish(ev)
 }
 
 func (r *DaemonRuntime) LoadHistoryFromDisk() error {
@@ -84,7 +111,15 @@ func (r *DaemonRuntime) LoadHistoryFromDisk() error {
 			r.nextID = t.ID + 1
 		}
 	}
+	r.tracef("history_loaded count=%d", len(r.history))
 	return nil
+}
+
+func (r *DaemonRuntime) HistoryCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneHistoryToTodayLocked(r.clock.Now())
+	return len(r.history)
 }
 
 func (r *DaemonRuntime) StartTask(title string, duration time.Duration) (*state.Task, error) {
@@ -95,7 +130,7 @@ func (r *DaemonRuntime) StartTask(title string, duration time.Duration) (*state.
 		return nil, err
 	}
 
-	now := time.Now()
+	now := r.clock.Now()
 	task := &state.Task{
 		ID:        r.nextID,
 		Title:     title,
@@ -111,7 +146,8 @@ func (r *DaemonRuntime) StartTask(title string, duration time.Duration) (*state.
 	r.stopTaskTimersLocked()
 	r.armTaskTimersLocked(task)
 
-	r.core.Publish(core.Event{Type: core.EventTaskStarted, At: now})
+	r.tracef("task_started id=%d title=%q duration=%s", task.ID, task.Title, task.Duration)
+	r.PublishCoreEvent(core.Event{Type: core.EventTaskStarted, At: now})
 	return task, nil
 }
 
@@ -122,7 +158,7 @@ func (r *DaemonRuntime) CancelCurrentTask() (*state.Task, error) {
 	if r.current == nil {
 		return nil, fmt.Errorf("no active task to cancel")
 	}
-	if time.Since(r.current.StartTime) > state.TaskLockedWaitDuration {
+	if r.clock.Since(r.current.StartTime) > state.TaskLockedWaitDuration {
 		return nil, fmt.Errorf("task is locked (grace period of %v expired)", state.TaskLockedWaitDuration)
 	}
 
@@ -133,8 +169,10 @@ func (r *DaemonRuntime) CancelCurrentTask() (*state.Task, error) {
 	r.breakRelockUntil = time.Time{}
 	r.stopCompletionAlertLocked()
 
-	r.core.Publish(core.Event{Type: core.EventTaskCancelled, At: time.Now()})
-	r.resumeIdleTrackingIfNeededLocked(time.Now())
+	now := r.clock.Now()
+	r.tracef("task_cancelled id=%d title=%q", task.ID, task.Title)
+	r.PublishCoreEvent(core.Event{Type: core.EventTaskCancelled, At: now})
+	r.resumeIdleTrackingIfNeededLocked(now)
 	return task, nil
 }
 
@@ -144,7 +182,7 @@ func (r *DaemonRuntime) Status() string {
 	relockUntil := r.breakRelockUntil
 	r.mu.Unlock()
 
-	now := time.Now()
+	now := r.clock.Now()
 	snap := r.core.Snapshot()
 	switch snap.Phase {
 	case core.PhasePendingCooldown:
@@ -193,7 +231,7 @@ func (r *DaemonRuntime) Status() string {
 func (r *DaemonRuntime) History() []state.Task {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.pruneHistoryToTodayLocked(time.Now())
+	r.pruneHistoryToTodayLocked(r.clock.Now())
 	out := make([]state.Task, 0, len(r.history))
 	for _, task := range r.history {
 		if task != nil {
@@ -211,7 +249,7 @@ func (r *DaemonRuntime) SetSystemLocked(locked bool) {
 
 func (r *DaemonRuntime) OnIdleEntered() {
 	r.mu.Lock()
-	now := time.Now()
+	now := r.clock.Now()
 	r.idleActive = true
 	phase := r.core.Snapshot().Phase
 
@@ -226,9 +264,8 @@ func (r *DaemonRuntime) OnIdleEntered() {
 		r.stopIdleTimersLocked()
 		r.idleSince = time.Time{}
 		r.idleWarned = false
-		actions := r.actions
 		r.mu.Unlock()
-		actions.LockScreen()
+		r.lockScreen()
 		return
 	}
 
@@ -262,7 +299,7 @@ func (r *DaemonRuntime) OnScreenLocked() {
 func (r *DaemonRuntime) OnScreenUnlocked() {
 	r.mu.Lock()
 	r.stopCompletionAlertLocked()
-	now := time.Now()
+	now := r.clock.Now()
 	snap := r.core.Snapshot()
 
 	if r.current == nil {
@@ -271,11 +308,10 @@ func (r *DaemonRuntime) OnScreenUnlocked() {
 			return
 		}
 		if snap.Phase == core.PhaseCooldown {
-			actions := r.actions
 			remaining := snap.CooldownUntil.Sub(now)
 			r.mu.Unlock()
-			actions.Notify("Cooldown Active", fmt.Sprintf("Cooldown active. Wait %s before starting a new task.", remaining.Round(time.Second)))
-			actions.LockScreen()
+			r.notify("Cooldown Active", fmt.Sprintf("Cooldown active. Wait %s before starting a new task.", remaining.Round(time.Second)))
+			r.lockScreen()
 			return
 		}
 		r.resumeIdleTrackingIfNeededLocked(now)
@@ -294,38 +330,40 @@ func (r *DaemonRuntime) OnScreenUnlocked() {
 	}
 	relockDelay := state.GetRuntimeConfig().BreakRelockDelay
 	r.breakRelockUntil = now.Add(relockDelay)
-	actions := r.actions
-	r.breakRelockTimer = time.AfterFunc(relockDelay, func() {
+	r.breakRelockTimer = r.clock.AfterFunc(relockDelay, func() {
 		r.relockIfBreak()
 	})
 	r.mu.Unlock()
 
 	if notifyUser {
-		actions.Notify("Break Active", "Break is active. Locking again in 30 seconds.")
+		r.notify("Break Active", "Break is active. Locking again in 30 seconds.")
 	}
 }
 
 func (r *DaemonRuntime) armTaskTimersLocked(task *state.Task) {
 	cfg := state.GetRuntimeConfig()
 	expireAt := task.StartTime.Add(task.Duration)
-	remaining := time.Until(expireAt)
+	remaining := r.clock.Until(expireAt)
 	if remaining < 0 {
 		remaining = 0
 	}
-	r.taskExpireTimer = time.AfterFunc(remaining, func() {
+	r.taskExpireTimer = r.clock.AfterFunc(remaining, func() {
 		r.completeCurrentTask(task.ID)
 	})
+	r.tracef("timer_set name=task_expire in=%s task_id=%d", remaining, task.ID)
 
 	if plan, ok := breakPlanForDuration(task.Duration, cfg); ok {
 		warnAt := plan.startOffset - cfg.BreakWarning
 		if warnAt > 0 {
-			r.breakWarnTimer = time.AfterFunc(warnAt, func() {
+			r.breakWarnTimer = r.clock.AfterFunc(warnAt, func() {
 				r.notifyBreakComing(task.ID)
 			})
+			r.tracef("timer_set name=break_warn in=%s task_id=%d", warnAt, task.ID)
 		}
-		r.breakStartTimer = time.AfterFunc(plan.startOffset, func() {
+		r.breakStartTimer = r.clock.AfterFunc(plan.startOffset, func() {
 			r.startBreak(task.ID, plan.duration)
 		})
+		r.tracef("timer_set name=break_start in=%s task_id=%d break_duration=%s", plan.startOffset, task.ID, plan.duration)
 	}
 }
 
@@ -341,31 +379,32 @@ func (r *DaemonRuntime) completeCurrentTask(taskID int) {
 	r.stopTaskTimersLocked()
 	r.breakRelockUntil = time.Time{}
 
-	now := time.Now()
+	now := r.clock.Now()
 	cooldownDuration := cooldownDurationFor(task.Duration, state.GetRuntimeConfig())
 	cooldownStartAt := now.Add(cooldownStartDelay)
-	actions := r.actions
-
-	r.core.Publish(core.Event{Type: core.EventTaskCompleted, At: now, CooldownStartAt: cooldownStartAt, CooldownDuration: cooldownDuration})
+	r.tracef("task_completed id=%d title=%q cooldown_start=%s cooldown_duration=%s", task.ID, task.Title, cooldownStartAt.Format(time.RFC3339Nano), cooldownDuration)
+	r.PublishCoreEvent(core.Event{Type: core.EventTaskCompleted, At: now, CooldownStartAt: cooldownStartAt, CooldownDuration: cooldownDuration})
 
 	if r.cooldownStartTimer != nil {
 		r.cooldownStartTimer.Stop()
 	}
-	r.cooldownStartTimer = time.AfterFunc(cooldownStartDelay, func() {
-		actions.LockScreen()
+	r.cooldownStartTimer = r.clock.AfterFunc(cooldownStartDelay, func() {
+		r.lockScreen()
 	})
+	r.tracef("timer_set name=cooldown_start in=%s", cooldownStartDelay)
 	if r.cooldownEndTimer != nil {
 		r.cooldownEndTimer.Stop()
 	}
-	r.cooldownEndTimer = time.AfterFunc(cooldownStartDelay+cooldownDuration, func() {
+	r.cooldownEndTimer = r.clock.AfterFunc(cooldownStartDelay+cooldownDuration, func() {
 		r.startCompletionAlert()
 	})
+	r.tracef("timer_set name=cooldown_end in=%s", cooldownStartDelay+cooldownDuration)
 	r.mu.Unlock()
 
 	if err := state.AppendCompletedTask(*task); err != nil {
 		fmt.Printf("failed to persist completed task: %v\n", err)
 	}
-	actions.Notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in 10s; locking screen.", task.Title))
+	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in 10s; locking screen.", task.Title))
 }
 
 func (r *DaemonRuntime) notifyBreakComing(taskID int) {
@@ -375,10 +414,9 @@ func (r *DaemonRuntime) notifyBreakComing(taskID int) {
 		return
 	}
 	title := r.current.Title
-	actions := r.actions
 	warning := state.GetRuntimeConfig().BreakWarning
 	r.mu.Unlock()
-	actions.Notify("Break Reminder", fmt.Sprintf("Break starts in %s for '%s'", warning, title))
+	r.notify("Break Reminder", fmt.Sprintf("Break starts in %s for '%s'", warning, title))
 }
 
 func (r *DaemonRuntime) startBreak(taskID int, breakDuration time.Duration) {
@@ -387,15 +425,17 @@ func (r *DaemonRuntime) startBreak(taskID int, breakDuration time.Duration) {
 		r.mu.Unlock()
 		return
 	}
-	breakUntil := time.Now().Add(breakDuration)
-	actions := r.actions
-	r.core.Publish(core.Event{Type: core.EventBreakStarted, At: time.Now(), BreakUntil: breakUntil})
-	r.breakEndTimer = time.AfterFunc(breakDuration, func() {
+	now := r.clock.Now()
+	breakUntil := now.Add(breakDuration)
+	r.tracef("break_started task_id=%d until=%s", taskID, breakUntil.Format(time.RFC3339Nano))
+	r.PublishCoreEvent(core.Event{Type: core.EventBreakStarted, At: now, BreakUntil: breakUntil})
+	r.breakEndTimer = r.clock.AfterFunc(breakDuration, func() {
 		r.endBreak(taskID)
 	})
+	r.tracef("timer_set name=break_end in=%s task_id=%d", breakDuration, taskID)
 	r.mu.Unlock()
-	actions.Notify("Break Started", fmt.Sprintf("Break for %s has started", breakDuration.Round(time.Second)))
-	actions.LockScreen()
+	r.notify("Break Started", fmt.Sprintf("Break for %s has started", breakDuration.Round(time.Second)))
+	r.lockScreen()
 }
 
 func (r *DaemonRuntime) endBreak(taskID int) {
@@ -413,11 +453,11 @@ func (r *DaemonRuntime) endBreak(taskID int) {
 		r.breakRelockTimer = nil
 	}
 	r.breakRelockUntil = time.Time{}
-	actions := r.actions
-	r.core.Publish(core.Event{Type: core.EventBreakEnded, At: time.Now()})
+	r.tracef("break_ended task_id=%d", taskID)
+	r.PublishCoreEvent(core.Event{Type: core.EventBreakEnded, At: r.clock.Now()})
 	r.mu.Unlock()
-	actions.UnlockScreen()
-	actions.Notify("Break Complete", "Break period ended. Continue your task.")
+	r.unlockScreen()
+	r.notify("Break Complete", "Break period ended. Continue your task.")
 	r.startCompletionAlert()
 }
 
@@ -432,17 +472,15 @@ func (r *DaemonRuntime) relockIfBreak() {
 		return
 	}
 	r.breakRelockUntil = time.Time{}
-	actions := r.actions
 	r.mu.Unlock()
-	actions.LockScreen()
+	r.lockScreen()
 }
 
 func (r *DaemonRuntime) startCompletionAlert() {
 	r.mu.Lock()
 	if !r.idleActive {
-		actions := r.actions
 		r.mu.Unlock()
-		actions.PlaySound("assets/task-ending.mp3")
+		r.playSound("assets/task-ending.mp3")
 		return
 	}
 	if r.completionAlertStop != nil {
@@ -452,19 +490,20 @@ func (r *DaemonRuntime) startCompletionAlert() {
 	stopCh := make(chan struct{})
 	r.completionAlertStop = stopCh
 	repeatInterval := state.GetRuntimeConfig().CompletionAlertRepeatInterval
-	actions := r.actions
+	r.tracef("completion_alert_loop_start interval=%s", repeatInterval)
 	r.mu.Unlock()
 
-	go r.runCompletionAlertLoop(stopCh, actions, repeatInterval)
+	go r.runCompletionAlertLoop(stopCh, repeatInterval)
 }
 
-func (r *DaemonRuntime) runCompletionAlertLoop(stopCh <-chan struct{}, actions interface{ PlaySound(string) }, repeatInterval time.Duration) {
+func (r *DaemonRuntime) runCompletionAlertLoop(stopCh <-chan struct{}, repeatInterval time.Duration) {
 	defer func() {
 		r.mu.Lock()
 		if r.completionAlertStop == stopCh {
 			r.completionAlertStop = nil
 		}
 		r.mu.Unlock()
+		r.tracef("completion_alert_loop_stop")
 	}()
 
 	for {
@@ -473,15 +512,15 @@ func (r *DaemonRuntime) runCompletionAlertLoop(stopCh <-chan struct{}, actions i
 			return
 		default:
 		}
-		actions.PlaySound("assets/task-ending.mp3")
-		timer := time.NewTimer(repeatInterval)
+		r.playSound("assets/task-ending.mp3")
+		timer := r.clock.NewTimer(repeatInterval)
 		select {
 		case <-stopCh:
 			if !timer.Stop() {
-				<-timer.C
+				<-timer.C()
 			}
 			return
-		case <-timer.C:
+		case <-timer.C():
 		}
 		r.mu.Lock()
 		running := r.completionAlertStop == stopCh && r.idleActive
@@ -499,12 +538,12 @@ func (r *DaemonRuntime) armIdleTimersLocked(now time.Time) {
 	r.idleWarned = false
 	idleSince := r.idleSince
 	if cfg.IdleWarnAfter > 0 {
-		r.idleWarnTimer = time.AfterFunc(cfg.IdleWarnAfter, func() {
+		r.idleWarnTimer = r.clock.AfterFunc(cfg.IdleWarnAfter, func() {
 			r.notifyIfStillIdle(idleSince)
 		})
 	}
 	if cfg.IdleLockAfter > 0 {
-		r.idleLockTimer = time.AfterFunc(cfg.IdleLockAfter, func() {
+		r.idleLockTimer = r.clock.AfterFunc(cfg.IdleLockAfter, func() {
 			r.lockIfStillIdle(idleSince)
 		})
 	}
@@ -522,11 +561,10 @@ func (r *DaemonRuntime) notifyIfStillIdle(idleSince time.Time) {
 		return
 	}
 	r.idleWarned = true
-	actions := r.actions
 	cfg := state.GetRuntimeConfig()
 	r.mu.Unlock()
 	remaining := (cfg.IdleLockAfter - cfg.IdleWarnAfter).Round(time.Second)
-	actions.Notify("Idle Warning", "No task active. Locking in "+remaining.String()+".")
+	r.notify("Idle Warning", "No task active. Locking in "+remaining.String()+".")
 }
 
 func (r *DaemonRuntime) lockIfStillIdle(idleSince time.Time) {
@@ -539,9 +577,8 @@ func (r *DaemonRuntime) lockIfStillIdle(idleSince time.Time) {
 	r.stopIdleTimersLocked()
 	r.idleSince = time.Time{}
 	r.idleWarned = false
-	actions := r.actions
 	r.mu.Unlock()
-	actions.LockScreen()
+	r.lockScreen()
 }
 
 func (r *DaemonRuntime) resumeIdleTrackingIfNeededLocked(now time.Time) {
@@ -606,6 +643,33 @@ func (r *DaemonRuntime) stopCompletionAlertLocked() {
 		close(r.completionAlertStop)
 		r.completionAlertStop = nil
 	}
+}
+
+func (r *DaemonRuntime) lockScreen() {
+	r.tracef("action lock_screen")
+	r.actions.LockScreen()
+}
+
+func (r *DaemonRuntime) unlockScreen() {
+	r.tracef("action unlock_screen")
+	r.actions.UnlockScreen()
+}
+
+func (r *DaemonRuntime) playSound(path string) {
+	r.tracef("action play_sound path=%s", path)
+	r.actions.PlaySound(path)
+}
+
+func (r *DaemonRuntime) notify(title, message string) {
+	r.tracef("action notify title=%q", title)
+	r.actions.Notify(title, message)
+}
+
+func (r *DaemonRuntime) tracef(format string, args ...any) {
+	if !r.trace {
+		return
+	}
+	log.Printf("flow "+format, args...)
 }
 
 type breakPlan struct {

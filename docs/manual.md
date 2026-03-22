@@ -13,6 +13,12 @@ Focus has two user-facing binaries:
 The daemon holds the state machine, timers, screen lock actions, notifications, and the `focus-events` helper.
 The client sends commands to the daemon over the Unix socket.
 
+Current architecture:
+
+- `cmd/daemon/runtime.go` executes runtime flow and side effects.
+- `internal/core` is the canonical phase/deadline reducer.
+- `internal/state` provides config, presets, history persistence, and socket path helpers.
+
 ## Runtime Paths
 
 These paths are resolved at runtime.
@@ -25,6 +31,7 @@ These paths are resolved at runtime.
 - History override: `FOCUS_HISTORY_FILE=/path/to/history.jsonl`
 
 The daemon prints the resolved config, socket, and history paths on startup.
+It also prints loaded today-history count and effective runtime durations.
 
 ## Configuration
 
@@ -159,6 +166,12 @@ Start the daemon from source:
 
 ```bash
 go run ./cmd/daemon
+```
+
+Enable runtime flow trace logs:
+
+```bash
+FOCUS_TRACE_FLOW=1 go run ./cmd/daemon
 ```
 
 Common flags:

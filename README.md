@@ -4,6 +4,12 @@ Focus is a productivity tool designed to keep your computer usage intentional. I
 
 The system operates via a background daemon (`focusd`) that handles time tracking, while a simple CLI (`focus`) provides the interface for managing your work.
 
+Current runtime model:
+
+- `cmd/daemon/runtime.go` owns lifecycle timers and side effects.
+- `internal/core` owns phase/deadline transitions (`idle`, `active`, `break`, `pending_cooldown`, `cooldown`).
+- `internal/state` is now config/preset/history/socket support only.
+
 ## Rules
 
 - **Intentional Use:** Focus gives you a 5-minute grace period to use your computer without an active task. Beyond that, the system will warn you before locking the screen or putting the computer to sleep.
@@ -63,6 +69,10 @@ Environment-specific notes:
 
 - `cinnamon-screensaver-command` is used for unlock action (currently not part of normal user flow).
 - `systemctl --user` is needed only if you use the user service install path.
+
+Runtime observability:
+
+- Set `FOCUS_TRACE_FLOW=1` to log runtime flow actions and core events.
 
 ## Run
 

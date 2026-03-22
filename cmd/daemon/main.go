@@ -65,9 +65,12 @@ func run() error {
 
 	if err := rt.LoadHistoryFromDisk(); err != nil {
 		log.Printf("warning: failed to load persisted history: %v", err)
+	} else {
+		log.Printf("history loaded today_count=%d", rt.HistoryCount())
 	}
 
 	runtimeCfg := state.GetRuntimeConfig()
+	logRuntimeConfig(runtimeCfg)
 	listener, err := events.Start(ctx, int(runtimeCfg.EventsIdleThreshold/time.Second), int(runtimeCfg.EventsIdlePoll/time.Second))
 	if err != nil {
 		return fmt.Errorf("focus-events startup failed: %w", err)
@@ -230,30 +233,55 @@ func ensureSocketPathAvailable(path string) error {
 
 func consumeHelperEvents(eventCh <-chan events.Event, runtime *DaemonRuntime) {
 	for event := range eventCh {
+		now := runtime.Now()
 		switch event.Kind {
 		case events.KindIdle:
 			switch event.State {
 			case "entered":
 				runtime.OnIdleEntered()
-				runtime.core.Publish(core.Event{Type: core.EventIdleEntered, At: time.Now()})
+				runtime.PublishCoreEvent(core.Event{Type: core.EventIdleEntered, At: now})
 			case "exited":
 				runtime.OnIdleExited()
-				runtime.core.Publish(core.Event{Type: core.EventIdleExited, At: time.Now()})
+				runtime.PublishCoreEvent(core.Event{Type: core.EventIdleExited, At: now})
 			}
 		case events.KindScreen:
 			switch event.State {
 			case "locked":
 				runtime.SetSystemLocked(true)
 				runtime.OnScreenLocked()
-				runtime.core.Publish(core.Event{Type: core.EventScreenLocked, At: time.Now()})
+				runtime.PublishCoreEvent(core.Event{Type: core.EventScreenLocked, At: now})
 			case "unlocked":
 				runtime.SetSystemLocked(false)
 				runtime.OnScreenUnlocked()
-				runtime.core.Publish(core.Event{Type: core.EventScreenUnlock, At: time.Now()})
+				runtime.PublishCoreEvent(core.Event{Type: core.EventScreenUnlock, At: now})
 			}
 		}
 		log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
 	}
+}
+
+func logRuntimeConfig(cfg state.RuntimeConfig) {
+	log.Printf(
+		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] idle=[warn:%s lock:%s] events=[threshold:%s poll:%s] alert=[repeat:%s]",
+		cfg.TaskShort,
+		cfg.TaskMedium,
+		cfg.TaskLong,
+		cfg.TaskDeep,
+		cfg.CooldownShort,
+		cfg.CooldownLong,
+		cfg.CooldownDeep,
+		cfg.BreakLongStart,
+		cfg.BreakDeepStart,
+		cfg.BreakLongDuration,
+		cfg.BreakDeepDuration,
+		cfg.BreakWarning,
+		cfg.BreakRelockDelay,
+		cfg.IdleWarnAfter,
+		cfg.IdleLockAfter,
+		cfg.EventsIdleThreshold,
+		cfg.EventsIdlePoll,
+		cfg.CompletionAlertRepeatInterval,
+	)
 }
 
 func formatCoreStatus(snapshot core.State) string {
