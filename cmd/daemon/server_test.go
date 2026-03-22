@@ -36,6 +36,41 @@ func TestHandleReloadFailure(t *testing.T) {
 	}
 }
 
+func TestHandleStartRejectsMissingDurationAndPreset(t *testing.T) {
+	srv := NewServer(&state.DaemonState{}, sys.NoopActions{}, nil)
+
+	res := srv.handleRequest(protocol.Request{
+		Command: "start",
+		Start: &protocol.StartRequest{
+			Title: "no duration",
+		},
+	})
+	if res.Error == nil {
+		t.Fatalf("response = %#v, want error", res)
+	}
+	if !strings.Contains(res.Error.Message, "missing task duration") {
+		t.Fatalf("error = %q, want missing duration error", res.Error.Message)
+	}
+}
+
+func TestHandleStartRejectsUnknownPreset(t *testing.T) {
+	srv := NewServer(&state.DaemonState{}, sys.NoopActions{}, nil)
+
+	res := srv.handleRequest(protocol.Request{
+		Command: "start",
+		Start: &protocol.StartRequest{
+			Title:  "bad preset",
+			Preset: "invalid",
+		},
+	})
+	if res.Error == nil {
+		t.Fatalf("response = %#v, want error", res)
+	}
+	if !strings.Contains(res.Error.Message, "unknown duration preset") {
+		t.Fatalf("error = %q, want preset error", res.Error.Message)
+	}
+}
+
 var errReloadTest = &reloadTestError{"boom"}
 
 type reloadTestError struct {

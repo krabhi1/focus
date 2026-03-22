@@ -7,6 +7,11 @@ import (
 )
 
 type RuntimeConfig struct {
+	TaskShort  time.Duration
+	TaskMedium time.Duration
+	TaskLong   time.Duration
+	TaskDeep   time.Duration
+
 	CooldownShort time.Duration
 	CooldownLong  time.Duration
 	CooldownDeep  time.Duration
@@ -31,6 +36,11 @@ var (
 
 func DefaultRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
+		TaskShort:  15 * time.Minute,
+		TaskMedium: 30 * time.Minute,
+		TaskLong:   60 * time.Minute,
+		TaskDeep:   90 * time.Minute,
+
 		CooldownShort: ShortCooldownDuration,
 		CooldownLong:  LongCooldownDuration,
 		CooldownDeep:  DeepCooldownDuration,
@@ -71,6 +81,10 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		name  string
 		value time.Duration
 	}{
+		{"task.short", cfg.TaskShort},
+		{"task.medium", cfg.TaskMedium},
+		{"task.long", cfg.TaskLong},
+		{"task.deep", cfg.TaskDeep},
 		{"cooldown.short", cfg.CooldownShort},
 		{"cooldown.long", cfg.CooldownLong},
 		{"cooldown.deep", cfg.CooldownDeep},
@@ -92,6 +106,9 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		}
 	}
 
+	if !(cfg.TaskShort < cfg.TaskMedium && cfg.TaskMedium < cfg.TaskLong && cfg.TaskLong < cfg.TaskDeep) {
+		return fmt.Errorf("task presets must be strictly increasing: short < medium < long < deep")
+	}
 	if cfg.IdleWarnAfter >= cfg.IdleLockAfter {
 		return fmt.Errorf("idle.warn_after must be less than idle.lock_after")
 	}
@@ -101,11 +118,23 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 	if cfg.BreakWarning >= cfg.BreakDeepStart {
 		return fmt.Errorf("break.warning must be less than break.deep_start")
 	}
-	if cfg.BreakLongStart >= 60*time.Minute {
-		return fmt.Errorf("break.long_start must be less than long task duration (60m)")
+	if cfg.BreakLongStart >= cfg.TaskLong {
+		return fmt.Errorf("break.long_start must be less than task.long")
 	}
-	if cfg.BreakDeepStart >= 90*time.Minute {
-		return fmt.Errorf("break.deep_start must be less than deep task duration (90m)")
+	if cfg.BreakDeepStart >= cfg.TaskDeep {
+		return fmt.Errorf("break.deep_start must be less than task.deep")
+	}
+	if cfg.BreakLongStart+cfg.BreakLongDuration >= cfg.TaskLong {
+		return fmt.Errorf("break.long_start + break.long_duration must be less than task.long")
+	}
+	if cfg.BreakDeepStart+cfg.BreakDeepDuration >= cfg.TaskDeep {
+		return fmt.Errorf("break.deep_start + break.deep_duration must be less than task.deep")
+	}
+	if cfg.BreakRelockDelay >= cfg.BreakLongDuration {
+		return fmt.Errorf("break.relock_delay must be less than break.long_duration")
+	}
+	if cfg.BreakRelockDelay >= cfg.BreakDeepDuration {
+		return fmt.Errorf("break.relock_delay must be less than break.deep_duration")
 	}
 
 	return nil

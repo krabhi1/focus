@@ -123,6 +123,10 @@ func parseDaemonOptions() daemonOptions {
 	var opts daemonOptions
 	fs := flag.NewFlagSet("focusd", flag.ExitOnError)
 	fs.StringVar(&opts.configPath, "config", "", "Path to config JSON (default: $FOCUS_CONFIG or ~/.config/focus/config.json)")
+	opts.overrides.TaskShort = fs.Duration("task-short", 0, "Override task.short duration")
+	opts.overrides.TaskMedium = fs.Duration("task-medium", 0, "Override task.medium duration")
+	opts.overrides.TaskLong = fs.Duration("task-long", 0, "Override task.long duration")
+	opts.overrides.TaskDeep = fs.Duration("task-deep", 0, "Override task.deep duration")
 	opts.overrides.CooldownShort = fs.Duration("cooldown-short", 0, "Override cooldown.short duration")
 	opts.overrides.CooldownLong = fs.Duration("cooldown-long", 0, "Override cooldown.long duration")
 	opts.overrides.CooldownDeep = fs.Duration("cooldown-deep", 0, "Override cooldown.deep duration")
@@ -179,6 +183,10 @@ func normalizeDurationOverrides(overrides *config.Overrides) {
 	}
 
 	overrides.CooldownShort = normalize(overrides.CooldownShort)
+	overrides.TaskShort = normalize(overrides.TaskShort)
+	overrides.TaskMedium = normalize(overrides.TaskMedium)
+	overrides.TaskLong = normalize(overrides.TaskLong)
+	overrides.TaskDeep = normalize(overrides.TaskDeep)
 	overrides.CooldownLong = normalize(overrides.CooldownLong)
 	overrides.CooldownDeep = normalize(overrides.CooldownDeep)
 	overrides.BreakLongStart = normalize(overrides.BreakLongStart)

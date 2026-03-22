@@ -12,10 +12,18 @@ import (
 )
 
 type File struct {
+	Task     taskJSON     `json:"task"`
 	Cooldown cooldownJSON `json:"cooldown"`
 	Break    breakJSON    `json:"break"`
 	Idle     idleJSON     `json:"idle"`
 	Alert    alertJSON    `json:"alert"`
+}
+
+type taskJSON struct {
+	Short  string `json:"short"`
+	Medium string `json:"medium"`
+	Long   string `json:"long"`
+	Deep   string `json:"deep"`
 }
 
 type cooldownJSON struct {
@@ -44,6 +52,11 @@ type alertJSON struct {
 }
 
 type Overrides struct {
+	TaskShort  *time.Duration
+	TaskMedium *time.Duration
+	TaskLong   *time.Duration
+	TaskDeep   *time.Duration
+
 	CooldownShort *time.Duration
 	CooldownLong  *time.Duration
 	CooldownDeep  *time.Duration
@@ -96,6 +109,19 @@ func Load(path string) (File, bool, error) {
 func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides Overrides) (state.RuntimeConfig, error) {
 	resolved := defaults
 
+	if err := applyDuration(&resolved.TaskShort, fileCfg.Task.Short); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid task.short: %w", err)
+	}
+	if err := applyDuration(&resolved.TaskMedium, fileCfg.Task.Medium); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid task.medium: %w", err)
+	}
+	if err := applyDuration(&resolved.TaskLong, fileCfg.Task.Long); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid task.long: %w", err)
+	}
+	if err := applyDuration(&resolved.TaskDeep, fileCfg.Task.Deep); err != nil {
+		return state.RuntimeConfig{}, fmt.Errorf("invalid task.deep: %w", err)
+	}
+
 	if err := applyDuration(&resolved.CooldownShort, fileCfg.Cooldown.Short); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid cooldown.short: %w", err)
 	}
@@ -137,6 +163,11 @@ func ResolveRuntimeConfig(defaults state.RuntimeConfig, fileCfg File, overrides 
 	if err := applyDuration(&resolved.CompletionAlertRepeatInterval, fileCfg.Alert.RepeatInterval); err != nil {
 		return state.RuntimeConfig{}, fmt.Errorf("invalid alert.repeat_interval: %w", err)
 	}
+
+	applyOverride(&resolved.TaskShort, overrides.TaskShort)
+	applyOverride(&resolved.TaskMedium, overrides.TaskMedium)
+	applyOverride(&resolved.TaskLong, overrides.TaskLong)
+	applyOverride(&resolved.TaskDeep, overrides.TaskDeep)
 
 	applyOverride(&resolved.CooldownShort, overrides.CooldownShort)
 	applyOverride(&resolved.CooldownLong, overrides.CooldownLong)

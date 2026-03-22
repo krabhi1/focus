@@ -8,29 +8,24 @@ import (
 	"focus/internal/state"
 	"net"
 	"os"
-	"time"
+	"strings"
 )
 
-type DurationArg time.Duration // any of [short(15m),medium(30m),long(60m),deep(90min)]
+type DurationArg string
 
 func (d *DurationArg) Set(value string) error {
-	// Mapping inside the function to keep it clean
-	durations := map[string]time.Duration{
-		"short":  15 * time.Minute,
-		"medium": 30 * time.Minute,
-		"long":   60 * time.Minute,
-		"deep":   90 * time.Minute,
-	}
-
-	if val, ok := durations[value]; ok {
-		*d = DurationArg(val)
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "short", "medium", "long", "deep":
+		*d = DurationArg(normalized)
 		return nil
+	default:
+		return fmt.Errorf("choose one of [short, medium, long, deep]")
 	}
-	return fmt.Errorf("choose one of [short(15m), medium(30m), long(60m), deep(90m)]")
 }
 
 func (d *DurationArg) String() string {
-	return time.Duration(*d).String()
+	return string(*d)
 }
 
 func main() {
@@ -97,13 +92,11 @@ func main() {
 				return
 			}
 		}
-		duration := time.Duration(durationArg)
-
 		req := protocol.Request{
 			Command: "start",
 			Start: &protocol.StartRequest{
-				Title:    *name,
-				Duration: duration,
+				Title:  *name,
+				Preset: string(durationArg),
 			},
 		}
 		res, err := SendRequest(conn, req)

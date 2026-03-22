@@ -48,9 +48,9 @@ func (s *DaemonState) onCooldownEnded(cooldownUntil time.Time) {
 
 func cooldownDurationFor(duration time.Duration, cfg RuntimeConfig) time.Duration {
 	switch {
-	case duration >= 90*time.Minute:
+	case duration >= cfg.TaskDeep:
 		return cfg.CooldownDeep
-	case duration >= 60*time.Minute:
+	case duration >= cfg.TaskLong:
 		return cfg.CooldownLong
 	default:
 		return cfg.CooldownShort

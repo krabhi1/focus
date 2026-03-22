@@ -15,6 +15,16 @@ import (
 )
 
 func TestConnectionStartStatusCooldownFlow(t *testing.T) {
+	cfg := state.DefaultRuntimeConfig()
+	cfg.TaskShort = 10 * time.Millisecond
+	cfg.TaskMedium = 20 * time.Millisecond
+	if err := state.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
+	})
+
 	st := newTestState(t)
 
 	socketPath := filepath.Join(t.TempDir(), "focus.sock")
@@ -47,8 +57,8 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	res := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
 		Start: &protocol.StartRequest{
-			Title:    "integration task",
-			Duration: 10 * time.Millisecond,
+			Title:  "integration task",
+			Preset: "short",
 		},
 	})
 	assertSuccessMessageContains(t, res, "Started task: integration task")
@@ -66,8 +76,8 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	cooldownRes := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
 		Start: &protocol.StartRequest{
-			Title:    "blocked task",
-			Duration: 10 * time.Millisecond,
+			Title:  "blocked task",
+			Preset: "short",
 		},
 	})
 	if cooldownRes.Error == nil {
@@ -82,8 +92,8 @@ func TestConnectionStartStatusCooldownFlow(t *testing.T) {
 	retryRes := roundTripRequest(t, socketPath, protocol.Request{
 		Command: "start",
 		Start: &protocol.StartRequest{
-			Title:    "second task",
-			Duration: 10 * time.Millisecond,
+			Title:  "second task",
+			Preset: "short",
 		},
 	})
 	assertSuccessMessageContains(t, retryRes, "Started task: second task")

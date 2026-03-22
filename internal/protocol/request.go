@@ -10,4 +10,5 @@ type Request struct {
 type StartRequest struct {
 	Title    string
 	Duration time.Duration
+	Preset   string
 }

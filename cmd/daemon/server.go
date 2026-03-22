@@ -99,7 +99,29 @@ func (s *Server) handleReload() protocol.Response {
 }
 
 func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
-	task, err := s.state.NewTask(req.Title, req.Duration)
+	duration := req.Duration
+	if req.Preset != "" {
+		resolvedDuration, err := state.ResolveTaskPresetDuration(req.Preset)
+		if err != nil {
+			return protocol.Response{
+				Type: "error",
+				Error: &protocol.ErrorResponse{
+					Message: err.Error(),
+				},
+			}
+		}
+		duration = resolvedDuration
+	}
+	if duration <= 0 {
+		return protocol.Response{
+			Type: "error",
+			Error: &protocol.ErrorResponse{
+				Message: "missing task duration; provide a preset (short|medium|long|deep)",
+			},
+		}
+	}
+
+	task, err := s.state.NewTask(req.Title, duration)
 	if err != nil {
 		return protocol.Response{
 			Type: "error",

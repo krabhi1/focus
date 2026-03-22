@@ -24,6 +24,7 @@ func TestLoadMissingFileIsNonFatal(t *testing.T) {
 func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	defaults := state.DefaultRuntimeConfig()
 	fileCfg := File{
+		Task:     taskJSON{Short: "10m", Medium: "20m", Long: "40m", Deep: "70m"},
 		Cooldown: cooldownJSON{Long: "12m"},
 		Break:    breakJSON{Warning: "90s"},
 		Idle:     idleJSON{WarnAfter: "4m"},
@@ -40,6 +41,9 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	if cfg.CooldownLong != 12*time.Minute {
 		t.Fatalf("CooldownLong = %s, want 12m", cfg.CooldownLong)
 	}
+	if cfg.TaskShort != 10*time.Minute || cfg.TaskMedium != 20*time.Minute || cfg.TaskLong != 40*time.Minute || cfg.TaskDeep != 70*time.Minute {
+		t.Fatalf("task preset durations not resolved from config: %+v", cfg)
+	}
 	if cfg.BreakWarning != 90*time.Second {
 		t.Fatalf("BreakWarning = %s, want 90s", cfg.BreakWarning)
 	}
@@ -51,6 +55,24 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	}
 	if cfg.CompletionAlertRepeatInterval != 7*time.Second {
 		t.Fatalf("CompletionAlertRepeatInterval = %s, want 7s", cfg.CompletionAlertRepeatInterval)
+	}
+}
+
+func TestResolveRuntimeConfigRejectsBreakWindowOverflow(t *testing.T) {
+	defaults := state.DefaultRuntimeConfig()
+	cfg, err := ResolveRuntimeConfig(defaults, File{
+		Task:  taskJSON{Short: "5m", Medium: "10m", Long: "20m", Deep: "40m"},
+		Break: breakJSON{Warning: "2m", LongStart: "15m", LongDuration: "10m", DeepStart: "30m", DeepDuration: "5m"},
+	}, Overrides{})
+	if err != nil {
+		t.Fatalf("ResolveRuntimeConfig returned parse error: %v", err)
+	}
+	err = state.SetRuntimeConfig(cfg)
+	if err == nil {
+		t.Fatal("expected invalid break window error")
+	}
+	if !strings.Contains(err.Error(), "break.long_start + break.long_duration") {
+		t.Fatalf("error = %q, want break window context", err.Error())
 	}
 }
 

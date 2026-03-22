@@ -1,0 +1,56 @@
+package state
+
+import (
+	"testing"
+	"time"
+)
+
+func TestResolveTaskPresetDuration(t *testing.T) {
+	t.Cleanup(func() {
+		_ = SetRuntimeConfig(DefaultRuntimeConfig())
+	})
+
+	cfg := DefaultRuntimeConfig()
+	cfg.TaskShort = 11 * time.Second
+	cfg.TaskMedium = 22 * time.Second
+	cfg.TaskLong = 33 * time.Second
+	cfg.TaskDeep = 44 * time.Second
+	cfg.BreakWarning = 2 * time.Second
+	cfg.BreakLongStart = 12 * time.Second
+	cfg.BreakDeepStart = 24 * time.Second
+	cfg.BreakLongDuration = 6 * time.Second
+	cfg.BreakDeepDuration = 10 * time.Second
+	cfg.BreakRelockDelay = 1 * time.Second
+	if err := SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		preset string
+		want   time.Duration
+	}{
+		{name: "short", preset: "short", want: 11 * time.Second},
+		{name: "medium", preset: "medium", want: 22 * time.Second},
+		{name: "long", preset: "long", want: 33 * time.Second},
+		{name: "deep", preset: "deep", want: 44 * time.Second},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ResolveTaskPresetDuration(tc.preset)
+			if err != nil {
+				t.Fatalf("ResolveTaskPresetDuration returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("ResolveTaskPresetDuration(%q) = %s, want %s", tc.preset, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveTaskPresetDurationRejectsUnknown(t *testing.T) {
+	if _, err := ResolveTaskPresetDuration("unknown"); err == nil {
+		t.Fatal("expected error for unknown preset")
+	}
+}

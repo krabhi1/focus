@@ -384,12 +384,12 @@ func breakPlanForDuration(duration time.Duration) (breakPlan, bool) {
 	cfg := GetRuntimeConfig()
 
 	switch {
-	case duration >= 90*time.Minute:
+	case duration >= cfg.TaskDeep:
 		return breakPlan{
 			startOffset: cfg.BreakDeepStart,
 			duration:    cfg.BreakDeepDuration,
 		}, true
-	case duration >= 60*time.Minute:
+	case duration >= cfg.TaskLong:
 		return breakPlan{
 			startOffset: cfg.BreakLongStart,
 			duration:    cfg.BreakLongDuration,
