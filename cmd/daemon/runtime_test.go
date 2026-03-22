@@ -199,6 +199,32 @@ func TestRuntimeCooldownUnlockRelocksAfterDelay(t *testing.T) {
 	}, "expected cooldown relock after unlock")
 }
 
+func TestRuntimeNoTaskLockContinuesWhileIdle(t *testing.T) {
+	cfg := state.DefaultRuntimeConfig()
+	cfg.IdleWarnAfter = 20 * time.Millisecond
+	cfg.IdleLockAfter = 80 * time.Millisecond
+	cfg.CompletionAlertRepeatInterval = 10 * time.Millisecond
+	if err := state.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = state.SetRuntimeConfig(state.DefaultRuntimeConfig())
+	})
+
+	actions := &recordingActions{}
+	rt := NewDaemonRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	waitForCondition(t, time.Second, func() bool {
+		return findNotifyIndex(actions.snapshot(), "No Task Active") >= 0
+	}, "expected no-task warning while active")
+
+	rt.OnIdleEntered()
+	waitForCondition(t, time.Second, func() bool {
+		return actions.count("lock") >= 1
+	}, "expected lock to still occur while idle")
+}
+
 func TestRuntimeCompletionAlertLoopStopsOnIdleExitAndUnlock(t *testing.T) {
 	cfg := state.DefaultRuntimeConfig()
 	cfg.CompletionAlertRepeatInterval = 10 * time.Millisecond

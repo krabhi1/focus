@@ -182,7 +182,7 @@ func TestCoreBackedStatusTaskToCooldownToIdle(t *testing.T) {
 
 	waitForStatusContains(t, srv, "Cooldown starting", 1*time.Second)
 	waitForStatusContains(t, srv, "Cooldown active", 1*time.Second)
-	waitForStatusContains(t, srv, "Idle", 2*time.Second)
+	waitForStatusContains(t, srv, "No task active", 2*time.Second)
 }
 
 func TestCoreBackedStatusShowsBreakBeforeCooldown(t *testing.T) {
@@ -218,7 +218,7 @@ func TestCoreBackedStatusShowsBreakBeforeCooldown(t *testing.T) {
 	})
 	assertSuccessMessageContains(t, start, "Started task: break-flow-task")
 
-	waitForStatusContains(t, srv, "Task active", 500*time.Millisecond)
+	waitForStatusContains(t, srv, "Task: break-flow-task", 500*time.Millisecond)
 	waitForStatusContains(t, srv, "Status: break", 1*time.Second)
 	waitForStatusContains(t, srv, "Cooldown starting", 2*time.Second)
 	waitForStatusContains(t, srv, "Cooldown active", 2*time.Second)
@@ -346,7 +346,7 @@ func newCoreBackedServerForTest(t *testing.T, rt *DaemonRuntime) *Server {
 
 	srv := NewServer(rt, sys.NoopActions{}, nil)
 	srv.SetStatusProvider(func() string {
-		return formatCoreStatus(rt.CoreSnapshot())
+		return rt.Status()
 	})
 	return srv
 }

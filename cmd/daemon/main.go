@@ -48,9 +48,6 @@ func run() error {
 	rt := NewDaemonRuntime(sys.RealActions{})
 	defer rt.Close()
 	srv := NewServer(rt, sys.RealActions{}, applyConfig)
-	srv.SetStatusProvider(func() string {
-		return formatCoreStatus(rt.CoreSnapshot())
-	})
 
 	configPath, err := resolvedConfigPath(opts)
 	if err != nil {
@@ -270,7 +267,7 @@ func consumeHelperEvents(eventCh <-chan events.Event, runtime *DaemonRuntime) {
 
 func logRuntimeConfig(cfg state.RuntimeConfig) {
 	log.Printf(
-		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] idle=[warn:%s lock:%s] events=[threshold:%s poll:%s] alert=[repeat:%s]",
+		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] events=[threshold:%s poll:%s] alert=[repeat:%s]",
 		cfg.TaskShort,
 		cfg.TaskMedium,
 		cfg.TaskLong,

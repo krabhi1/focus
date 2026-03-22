@@ -30,13 +30,13 @@ type DaemonRuntime struct {
 	relockTimer        runtimeTimer
 	cooldownStartTimer runtimeTimer
 	cooldownEndTimer   runtimeTimer
-	idleWarnTimer      runtimeTimer
-	idleLockTimer      runtimeTimer
+	noTaskWarnTimer    runtimeTimer
+	noTaskLockTimer    runtimeTimer
 
 	idleActive          bool
 	systemLocked        bool
-	idleSince           time.Time
-	idleWarned          bool
+	noTaskSince         time.Time
+	noTaskWarned        bool
 	relockUntil         time.Time
 	completionAlertStop chan struct{}
 }
@@ -45,13 +45,17 @@ func NewDaemonRuntime(actions sys.Actions) *DaemonRuntime {
 	if actions == nil {
 		actions = sys.RealActions{}
 	}
-	return &DaemonRuntime{
+	rt := &DaemonRuntime{
 		actions: actions,
 		core:    core.NewRuntime(core.InitialState()),
 		clock:   realRuntimeClock{},
 		trace:   os.Getenv("FOCUS_TRACE_FLOW") == "1",
 		nextID:  1,
 	}
+	rt.mu.Lock()
+	rt.resumeNoTaskTrackingIfNeededLocked(rt.clock.Now())
+	rt.mu.Unlock()
+	return rt
 }
 
 func NewDaemonRuntimeWithClock(actions sys.Actions, clock runtimeClock) *DaemonRuntime {
@@ -134,6 +138,7 @@ func (r *DaemonRuntime) StartTask(title string, duration time.Duration) (*state.
 	r.pruneHistoryToTodayLocked(now)
 
 	r.stopTaskTimersLocked()
+	r.stopNoTaskTimersLocked()
 	r.armTaskTimersLocked(task)
 
 	r.tracef("task_started id=%d title=%q duration=%s", task.ID, task.Title, task.Duration)
@@ -156,13 +161,14 @@ func (r *DaemonRuntime) CancelCurrentTask() (*state.Task, error) {
 	task.Status = state.StatusCancelled
 	r.current = nil
 	r.stopTaskTimersLocked()
+	r.stopNoTaskTimersLocked()
 	r.relockUntil = time.Time{}
 	r.stopCompletionAlertLocked()
 
 	now := r.clock.Now()
 	r.tracef("task_cancelled id=%d title=%q", task.ID, task.Title)
 	r.PublishCoreEvent(core.Event{Type: core.EventTaskCancelled, At: now})
-	r.resumeIdleTrackingIfNeededLocked(now)
+	r.resumeNoTaskTrackingIfNeededLocked(now)
 	return task, nil
 }
 
@@ -170,6 +176,8 @@ func (r *DaemonRuntime) Status() string {
 	r.mu.Lock()
 	current := r.current
 	relockUntil := r.relockUntil
+	noTaskSince := r.noTaskSince
+	systemLocked := r.systemLocked
 	r.mu.Unlock()
 
 	now := r.clock.Now()
@@ -214,6 +222,13 @@ func (r *DaemonRuntime) Status() string {
 		}
 		return fmt.Sprintf("Task: %s | Remaining: %s", current.Title, remaining.Round(time.Second))
 	default:
+		if current == nil && !noTaskSince.IsZero() && !systemLocked {
+			remaining := state.GetRuntimeConfig().IdleLockAfter - r.clock.Since(noTaskSince)
+			if remaining < 0 {
+				remaining = 0
+			}
+			return fmt.Sprintf("No task active | Lock in: %s", remaining.Round(time.Second))
+		}
 		return "Idle"
 	}
 }
@@ -239,37 +254,15 @@ func (r *DaemonRuntime) SetSystemLocked(locked bool) {
 
 func (r *DaemonRuntime) OnIdleEntered() {
 	r.mu.Lock()
-	now := r.clock.Now()
 	r.idleActive = true
-	phase := r.core.Snapshot().Phase
-
-	if r.current != nil || r.systemLocked || phase == core.PhasePendingCooldown {
-		r.stopIdleTimersLocked()
-		r.idleSince = time.Time{}
-		r.idleWarned = false
-		r.mu.Unlock()
-		return
-	}
-	if phase == core.PhaseCooldown {
-		r.stopIdleTimersLocked()
-		r.idleSince = time.Time{}
-		r.idleWarned = false
-		r.mu.Unlock()
-		r.lockScreen()
-		return
-	}
-
-	r.armIdleTimersLocked(now)
 	r.mu.Unlock()
 }
 
 func (r *DaemonRuntime) OnIdleExited() {
 	r.mu.Lock()
 	r.idleActive = false
-	r.stopIdleTimersLocked()
 	r.stopCompletionAlertLocked()
-	r.idleSince = time.Time{}
-	r.idleWarned = false
+	r.resumeNoTaskTrackingIfNeededLocked(r.clock.Now())
 	r.mu.Unlock()
 }
 
@@ -280,9 +273,9 @@ func (r *DaemonRuntime) OnScreenLocked() {
 		r.relockTimer = nil
 	}
 	r.relockUntil = time.Time{}
-	r.stopIdleTimersLocked()
-	r.idleSince = time.Time{}
-	r.idleWarned = false
+	r.stopNoTaskTimersLocked()
+	r.noTaskSince = time.Time{}
+	r.noTaskWarned = false
 	r.mu.Unlock()
 }
 
@@ -311,7 +304,7 @@ func (r *DaemonRuntime) OnScreenUnlocked() {
 			r.notify("Cooldown Active", fmt.Sprintf("Cooldown active. Locking again in %s.", relockDelay.Round(time.Second)))
 			return
 		}
-		r.resumeIdleTrackingIfNeededLocked(now)
+		r.resumeNoTaskTrackingIfNeededLocked(now)
 		r.mu.Unlock()
 		return
 	}
@@ -395,6 +388,9 @@ func (r *DaemonRuntime) completeCurrentTask(taskID int) {
 	}
 	r.cooldownEndTimer = r.clock.AfterFunc(cfg.CooldownStartDelay+cooldownDuration, func() {
 		r.startCompletionAlert()
+		r.mu.Lock()
+		r.resumeNoTaskTrackingAfterCooldownLocked(r.clock.Now())
+		r.mu.Unlock()
 	})
 	r.tracef("timer_set name=cooldown_end in=%s", cfg.CooldownStartDelay+cooldownDuration)
 	r.mu.Unlock()
@@ -529,74 +525,83 @@ func (r *DaemonRuntime) runCompletionAlertLoop(stopCh <-chan struct{}, repeatInt
 	}
 }
 
-func (r *DaemonRuntime) armIdleTimersLocked(now time.Time) {
+func (r *DaemonRuntime) armNoTaskTimersLocked(now time.Time) {
 	cfg := state.GetRuntimeConfig()
-	r.stopIdleTimersLocked()
-	r.idleSince = now
-	r.idleWarned = false
-	idleSince := r.idleSince
+	r.stopNoTaskTimersLocked()
+	r.noTaskSince = now
+	r.noTaskWarned = false
+	noTaskSince := r.noTaskSince
 	if cfg.IdleWarnAfter > 0 {
-		r.idleWarnTimer = r.clock.AfterFunc(cfg.IdleWarnAfter, func() {
-			r.notifyIfStillIdle(idleSince)
+		r.noTaskWarnTimer = r.clock.AfterFunc(cfg.IdleWarnAfter, func() {
+			r.notifyNoTaskStillActive(noTaskSince)
 		})
 	}
 	if cfg.IdleLockAfter > 0 {
-		r.idleLockTimer = r.clock.AfterFunc(cfg.IdleLockAfter, func() {
-			r.lockIfStillIdle(idleSince)
+		r.noTaskLockTimer = r.clock.AfterFunc(cfg.IdleLockAfter, func() {
+			r.lockNoTaskStillActive(noTaskSince)
 		})
 	}
 }
 
-func (r *DaemonRuntime) notifyIfStillIdle(idleSince time.Time) {
+func (r *DaemonRuntime) notifyNoTaskStillActive(noTaskSince time.Time) {
 	r.mu.Lock()
 	snap := r.core.Snapshot()
-	if !r.idleActive || !r.idleSince.Equal(idleSince) || r.current != nil || r.systemLocked || snap.Phase == core.PhaseCooldown || snap.Phase == core.PhasePendingCooldown {
+	if !r.noTaskSince.Equal(noTaskSince) || r.current != nil || r.systemLocked || snap.Phase == core.PhaseCooldown || snap.Phase == core.PhasePendingCooldown || snap.Phase == core.PhaseBreak {
 		r.mu.Unlock()
 		return
 	}
-	if r.idleWarned {
+	if r.noTaskWarned {
 		r.mu.Unlock()
 		return
 	}
-	r.idleWarned = true
+	r.noTaskWarned = true
 	cfg := state.GetRuntimeConfig()
 	r.mu.Unlock()
 	remaining := (cfg.IdleLockAfter - cfg.IdleWarnAfter).Round(time.Second)
-	r.notify("Idle Warning", "No task active. Locking in "+remaining.String()+".")
+	r.notify("No Task Active", "No task active. Locking in "+remaining.String()+".")
 }
 
-func (r *DaemonRuntime) lockIfStillIdle(idleSince time.Time) {
+func (r *DaemonRuntime) lockNoTaskStillActive(noTaskSince time.Time) {
 	r.mu.Lock()
 	snap := r.core.Snapshot()
-	if !r.idleActive || !r.idleSince.Equal(idleSince) || r.current != nil || r.systemLocked || snap.Phase == core.PhaseCooldown || snap.Phase == core.PhasePendingCooldown {
+	if !r.noTaskSince.Equal(noTaskSince) || r.current != nil || r.systemLocked || snap.Phase == core.PhaseCooldown || snap.Phase == core.PhasePendingCooldown || snap.Phase == core.PhaseBreak {
 		r.mu.Unlock()
 		return
 	}
-	r.stopIdleTimersLocked()
-	r.idleSince = time.Time{}
-	r.idleWarned = false
+	r.stopNoTaskTimersLocked()
+	r.noTaskSince = time.Time{}
+	r.noTaskWarned = false
 	r.mu.Unlock()
 	r.lockScreen()
 }
 
-func (r *DaemonRuntime) resumeIdleTrackingIfNeededLocked(now time.Time) {
+func (r *DaemonRuntime) resumeNoTaskTrackingIfNeededLocked(now time.Time) {
 	snap := r.core.Snapshot()
-	if !r.idleActive || r.current != nil || r.systemLocked || snap.Phase == core.PhaseCooldown || snap.Phase == core.PhasePendingCooldown {
+	if r.current != nil || r.systemLocked || snap.Phase == core.PhaseCooldown || snap.Phase == core.PhasePendingCooldown || snap.Phase == core.PhaseBreak {
 		return
 	}
-	if r.idleSince.IsZero() || r.idleWarnTimer == nil || r.idleLockTimer == nil {
-		r.armIdleTimersLocked(now)
+	if r.noTaskSince.IsZero() || r.noTaskWarnTimer == nil || r.noTaskLockTimer == nil {
+		r.armNoTaskTimersLocked(now)
 	}
 }
 
-func (r *DaemonRuntime) stopIdleTimersLocked() {
-	if r.idleWarnTimer != nil {
-		r.idleWarnTimer.Stop()
-		r.idleWarnTimer = nil
+func (r *DaemonRuntime) resumeNoTaskTrackingAfterCooldownLocked(now time.Time) {
+	if r.current != nil || r.systemLocked {
+		return
 	}
-	if r.idleLockTimer != nil {
-		r.idleLockTimer.Stop()
-		r.idleLockTimer = nil
+	if r.noTaskSince.IsZero() || r.noTaskWarnTimer == nil || r.noTaskLockTimer == nil {
+		r.armNoTaskTimersLocked(now)
+	}
+}
+
+func (r *DaemonRuntime) stopNoTaskTimersLocked() {
+	if r.noTaskWarnTimer != nil {
+		r.noTaskWarnTimer.Stop()
+		r.noTaskWarnTimer = nil
+	}
+	if r.noTaskLockTimer != nil {
+		r.noTaskLockTimer.Stop()
+		r.noTaskLockTimer = nil
 	}
 }
 
@@ -633,7 +638,7 @@ func (r *DaemonRuntime) stopTaskTimersLocked() {
 
 func (r *DaemonRuntime) stopAllTimersLocked() {
 	r.stopTaskTimersLocked()
-	r.stopIdleTimersLocked()
+	r.stopNoTaskTimersLocked()
 }
 
 func (r *DaemonRuntime) stopCompletionAlertLocked() {
