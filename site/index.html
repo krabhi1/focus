@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#08111a" />
+    <meta
+      name="description"
+      content="Focus is a Linux daemon for task timing, break control, cooldowns, and relock enforcement."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Focus - Linux session enforcement" />
+    <meta
+      property="og:description"
+      content="Task timing, break control, cooldowns, and screen relock for Linux."
+    />
+    <meta property="og:url" content="https://focus.krabhi.me" />
+    <meta property="og:image" content="https://focus.krabhi.me/og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Focus - Linux session enforcement" />
+    <meta
+      name="twitter:description"
+      content="Task timing, break control, cooldowns, and screen relock for Linux."
+    />
+    <meta name="twitter:image" content="https://focus.krabhi.me/og-image.svg" />
+    <title>Focus - Linux session enforcement</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="glow glow-left"></div>
+    <div class="glow glow-right"></div>
+
+    <header class="container topbar">
+      <a class="brand" href="/" aria-label="Focus">
+        <span class="dot"></span>
+        Focus
+      </a>
+      <nav class="nav">
+        <a href="#install">Install</a>
+        <a href="https://github.com/krabhi1/focus" target="_blank" rel="noreferrer">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="container">
+      <section class="hero">
+        <p class="eyebrow">Linux only (for now)</p>
+        <h1>Focus enforces your session rules.</h1>
+        <p class="lede">
+          One daemon tracks active tasks, starts breaks, applies cooldowns, and relocks the screen
+          when required.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="#install">Install Focus</a>
+          <a class="button secondary" href="https://github.com/krabhi1/focus/releases/latest" target="_blank" rel="noreferrer">
+            Latest release
+          </a>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Features</h2>
+        <ul class="feature-list">
+          <li>Preset task durations: short, medium, long, deep.</li>
+          <li>Break windows for long and deep tasks with lock enforcement.</li>
+          <li>Cooldown after task completion before next task is allowed.</li>
+          <li>Relock on unlock during break/cooldown based on relock delay.</li>
+          <li>Completed task history persisted to file.</li>
+        </ul>
+      </section>
+
+      <section class="panel" id="install">
+        <h2>Platform + Install</h2>
+        <div class="chips">
+          <span class="chip on">Linux: supported</span>
+          <span class="chip soon">Windows: coming soon</span>
+        </div>
+        <p>Use the install script:</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh</code></pre>
+        <div class="links">
+          <a href="https://github.com/krabhi1/focus/blob/main/docs/manual.md" target="_blank" rel="noreferrer">Manual</a>
+          <a href="https://github.com/krabhi1/focus" target="_blank" rel="noreferrer">Source</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

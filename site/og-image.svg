@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none" role="img" aria-label="Focus landing page preview">
+  <defs>
+    <linearGradient id="bg" x1="114" y1="62" x2="1078" y2="598" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#08111A" />
+      <stop offset="1" stop-color="#050B11" />
+    </linearGradient>
+    <linearGradient id="accent" x1="208" y1="152" x2="612" y2="566" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7EE0B1" />
+      <stop offset="1" stop-color="#FFD48A" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="44" fill="url(#bg)" />
+  <circle cx="175" cy="120" r="150" fill="#7EE0B1" fill-opacity="0.14" />
+  <circle cx="1060" cy="110" r="160" fill="#FFD48A" fill-opacity="0.12" />
+  <rect x="76" y="84" width="1048" height="462" rx="32" fill="#0A121C" fill-opacity="0.88" stroke="#B0E8D6" stroke-opacity="0.18" />
+  <path d="M108 164H158" stroke="url(#accent)" stroke-width="10" stroke-linecap="round" />
+  <text x="108" y="228" fill="#EDF6F2" font-family="Space Grotesk, Arial, sans-serif" font-size="72" font-weight="700">Focus</text>
+  <text x="108" y="292" fill="#9AB0AA" font-family="Space Grotesk, Arial, sans-serif" font-size="34" font-weight="500">Deliberate sessions for Linux</text>
+  <text x="108" y="366" fill="#EDF6F2" font-family="IBM Plex Mono, monospace" font-size="24">Task timing  •  Break enforcement  •  Cooldowns  •  Screen locking</text>
+  <rect x="108" y="418" width="300" height="64" rx="32" fill="url(#accent)" />
+  <text x="138" y="460" fill="#081117" font-family="Space Grotesk, Arial, sans-serif" font-size="24" font-weight="700">focus.krabhi.me</text>
+  <rect x="756" y="150" width="246" height="330" rx="30" fill="#071018" stroke="#B0E8D6" stroke-opacity="0.16" />
+  <rect x="794" y="188" width="170" height="24" rx="12" fill="#7EE0B1" fill-opacity="0.18" />
+  <rect x="794" y="234" width="132" height="14" rx="7" fill="#9AB0AA" fill-opacity="0.48" />
+  <rect x="794" y="274" width="154" height="14" rx="7" fill="#9AB0AA" fill-opacity="0.36" />
+  <rect x="794" y="314" width="118" height="14" rx="7" fill="#9AB0AA" fill-opacity="0.28" />
+  <rect x="794" y="370" width="140" height="48" rx="24" fill="#7EE0B1" />
+  <text x="826" y="401" fill="#081117" font-family="Space Grotesk, Arial, sans-serif" font-size="20" font-weight="700">Install</text>
+</svg>

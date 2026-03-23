@@ -4,6 +4,8 @@ Focus is a productivity tool designed to keep your computer usage intentional. I
 
 The system operates via a background daemon (`focusd`) that handles time tracking, while a simple CLI (`focus`) provides the interface for managing your work.
 
+Project site: [focus.krabhi.me](https://focus.krabhi.me)
+
 Current runtime model:
 
 - `cmd/daemon/runtime.go` owns lifecycle timers and side effects.
