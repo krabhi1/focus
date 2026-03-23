@@ -52,8 +52,8 @@ Example:
     "long": "10m",
     "deep": "15m"
   },
-  "relock_delay": "30s",
-  "cooldown_start_delay": "10s",
+  "relock_delay": "0s",
+  "cooldown_start_delay": "2m",
   "break": {
     "long_start": "25m",
     "deep_start": "45m",
@@ -63,7 +63,7 @@ Example:
   },
   "idle": {
     "warn_after": "3m",
-    "lock_after": "5m"
+  "lock_after": "2m"
   },
   "alert": {
     "repeat_interval": "3s"
@@ -98,7 +98,7 @@ The daemon resolves cooldown from the task duration.
 
 Shared relock delay used when the user unlocks during break or cooldown.
 
-- `relock_delay`: how long to wait before locking again after an unlock during break or cooldown
+- `relock_delay`: how long to wait before locking again after an unlock during break or cooldown; `0s` means lock immediately
 
 ### `cooldown_start_delay`
 
@@ -422,8 +422,8 @@ Typical values are long enough to match real work sessions:
     "long": "10m",
     "deep": "15m"
   },
-  "relock_delay": "30s",
-  "cooldown_start_delay": "10s",
+  "relock_delay": "0s",
+  "cooldown_start_delay": "2m",
   "break": {
     "long_start": "25m",
     "deep_start": "45m",
@@ -433,7 +433,7 @@ Typical values are long enough to match real work sessions:
   },
   "idle": {
     "warn_after": "3m",
-    "lock_after": "5m"
+    "lock_after": "2m"
   },
   "alert": {
     "repeat_interval": "3s"

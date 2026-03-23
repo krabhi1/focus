@@ -97,7 +97,6 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		{"break.warning", cfg.BreakWarning},
 		{"break.long_duration", cfg.BreakLongDuration},
 		{"break.deep_duration", cfg.BreakDeepDuration},
-		{"relock_delay", cfg.RelockDelay},
 		{"cooldown_start_delay", cfg.CooldownStartDelay},
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
@@ -110,6 +109,9 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 		if item.value <= 0 {
 			return fmt.Errorf("%s must be > 0", item.name)
 		}
+	}
+	if cfg.RelockDelay < 0 {
+		return fmt.Errorf("relock_delay must be >= 0")
 	}
 
 	if !(cfg.TaskShort < cfg.TaskMedium && cfg.TaskMedium < cfg.TaskLong && cfg.TaskLong < cfg.TaskDeep) {

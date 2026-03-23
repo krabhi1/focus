@@ -106,6 +106,19 @@ func TestResolveRuntimeConfigRejectsInvalidDuration(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeConfigAllowsZeroRelockDelay(t *testing.T) {
+	defaults := state.DefaultRuntimeConfig()
+	cfg, err := ResolveRuntimeConfig(defaults, File{
+		RelockDelay: "0s",
+	}, Overrides{})
+	if err != nil {
+		t.Fatalf("ResolveRuntimeConfig returned error: %v", err)
+	}
+	if cfg.RelockDelay != 0 {
+		t.Fatalf("RelockDelay = %s, want 0s", cfg.RelockDelay)
+	}
+}
+
 func TestDefaultPathUsesFocusConfigEnv(t *testing.T) {
 	t.Setenv("FOCUS_CONFIG", "/tmp/focus-custom-config.json")
 	got, err := DefaultPath()

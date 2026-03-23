@@ -50,6 +50,19 @@ func TestResolveTaskPresetDuration(t *testing.T) {
 	}
 }
 
+func TestDefaultRuntimeConfigDefaults(t *testing.T) {
+	cfg := DefaultRuntimeConfig()
+	if cfg.RelockDelay != 0 {
+		t.Fatalf("RelockDelay = %s, want 0s", cfg.RelockDelay)
+	}
+	if cfg.CooldownStartDelay != 2*time.Minute {
+		t.Fatalf("CooldownStartDelay = %s, want 2m", cfg.CooldownStartDelay)
+	}
+	if cfg.IdleLockAfter != 2*time.Minute {
+		t.Fatalf("IdleLockAfter = %s, want 2m", cfg.IdleLockAfter)
+	}
+}
+
 func TestResolveTaskPresetDurationRejectsUnknown(t *testing.T) {
 	if _, err := ResolveTaskPresetDuration("unknown"); err == nil {
 		t.Fatal("expected error for unknown preset")

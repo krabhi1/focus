@@ -12,7 +12,7 @@ Current runtime model:
 
 ## Rules
 
-- **Intentional Use:** Focus gives you a 5-minute grace period to use your computer without an active task. Beyond that, the system will warn you before locking the screen or putting the computer to sleep.
+- **Intentional Use:** Focus gives you a 2-minute grace period to use your computer without an active task. Beyond that, the system will warn you before locking the screen or putting the computer to sleep.
 - **One Thing at a Time:** Only one task can be active at once. When a task finishes, the daemon enforces a cooldown before you can start the next one. Cooldown scales by task length.
 - **Work Modes:**
   - **short (15 min):** No in-task break.
@@ -47,7 +47,7 @@ flowchart TB
 
     Active -- cancel in grace period --> Idle
 
-    Idle -- no task for 5m --> Lock
+    Idle -- no task for 2m --> Lock
     Break -- unlock during break --> Lock
     Cooldown -- unlock during cooldown --> Lock
 ```

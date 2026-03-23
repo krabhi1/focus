@@ -398,7 +398,7 @@ func (r *DaemonRuntime) completeCurrentTask(taskID int) {
 	if err := state.AppendCompletedTask(*task); err != nil {
 		fmt.Printf("failed to persist completed task: %v\n", err)
 	}
-	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in %s; locking screen.", task.Title, cfg.CooldownStartDelay.Round(time.Second)))
+	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in %s", task.Title, cfg.CooldownStartDelay.Round(time.Second)))
 }
 
 func (r *DaemonRuntime) notifyBreakComing(taskID int) {
