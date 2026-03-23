@@ -115,13 +115,13 @@ go run ./cmd/client status
 Install latest release (GitHub):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh
+curl -fsSL https://focus.krabhi.me/install.sh | sh
 ```
 
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://focus.krabhi.me/install.sh | sh -s -- --version v0.1.0
 ```
 
 Manual (recommended for audit): download `install.sh`, review it, then run it.
@@ -268,7 +268,7 @@ make check-release VERSION=v0.1.1
 ### Verify installer against released tag
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/krabhi1/focus/main/install.sh | sh -s -- --version v0.1.1 --no-systemd
+curl -fsSL https://focus.krabhi.me/install.sh | sh -s -- --version v0.1.1 --no-systemd
 ```
 
 ### Notes
