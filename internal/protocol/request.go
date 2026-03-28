@@ -3,8 +3,9 @@ package protocol
 import "time"
 
 type Request struct {
-	Command string
-	Start   *StartRequest
+	Command    string
+	Start      *StartRequest
+	HistoryAll bool
 }
 
 type StartRequest struct {

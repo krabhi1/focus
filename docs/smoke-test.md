@@ -77,6 +77,7 @@ Check status and history:
 ```bash
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus status
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus history
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus history --all
 ```
 
 ## Cleanup

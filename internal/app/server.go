@@ -56,7 +56,7 @@ func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 	case "cancel":
 		return s.handleCancel()
 	case "history":
-		return s.handleHistory()
+		return s.handleHistory(req.HistoryAll)
 	case "reload":
 		return s.handleReload()
 	default:
@@ -111,7 +111,21 @@ func (s *Server) handleCancel() protocol.Response {
 	return protocol.Response{Type: "success", Success: &protocol.SuccessResponse{Message: fmt.Sprintf("Cancelled the task: %s", task.Title)}}
 }
 
-func (s *Server) handleHistory() protocol.Response {
+func (s *Server) handleHistory(all bool) protocol.Response {
+	if all {
+		entries, loadErr := storage.LoadAllHistory()
+		if loadErr != nil {
+			return protocol.Response{Type: "error", Error: &protocol.ErrorResponse{Message: fmt.Sprintf("Failed to load history: %v", loadErr)}}
+		}
+		lines := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			lines = append(lines, formatHistoryLine(entry.Task))
+		}
+		if len(lines) == 0 {
+			return protocol.Response{Type: "success", Success: &protocol.SuccessResponse{Message: "No task history"}}
+		}
+		return protocol.Response{Type: "success", Success: &protocol.SuccessResponse{Message: strings.Join(lines, "\n")}}
+	}
 	history := s.runtime.History()
 	if len(history) == 0 {
 		return protocol.Response{Type: "success", Success: &protocol.SuccessResponse{Message: "No task history"}}

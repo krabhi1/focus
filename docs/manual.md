@@ -268,6 +268,8 @@ Example:
 focus history
 ```
 
+Use `focus history --all` to show every completed task in the persisted history file.
+
 Current behavior:
 
 - only completed tasks are persisted

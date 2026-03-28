@@ -1,11 +1,13 @@
 package app
 
 import (
+	"focus/internal/domain"
 	"focus/internal/effects"
 	"focus/internal/protocol"
 	"focus/internal/storage"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHandleReloadSuccess(t *testing.T) {
@@ -121,6 +123,44 @@ func TestHistoryResponseShowsTodayTasks(t *testing.T) {
 	}
 	if !strings.Contains(res.Success.Message, "No task history") {
 		t.Fatalf("history = %q, want empty history", res.Success.Message)
+	}
+}
+
+func TestHistoryResponseShowsAllPersistedTasks(t *testing.T) {
+	dir := t.TempDir()
+	historyPath := dir + "/history.jsonl"
+	t.Setenv("FOCUS_HISTORY_FILE", historyPath)
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+	srv := NewServer(rt, effects.NoopActions{}, nil)
+
+	if err := storage.AppendCompletedTask(domain.Task{
+		ID:        1,
+		Title:     "first",
+		Duration:  30 * time.Minute,
+		StartTime: time.Now().Add(-24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("AppendCompletedTask(first) failed: %v", err)
+	}
+	if err := storage.AppendCompletedTask(domain.Task{
+		ID:        2,
+		Title:     "second",
+		Duration:  45 * time.Minute,
+		StartTime: time.Now(),
+	}); err != nil {
+		t.Fatalf("AppendCompletedTask(second) failed: %v", err)
+	}
+
+	res := srv.handleRequest(protocol.Request{Command: "history", HistoryAll: true})
+	if res.Success == nil {
+		t.Fatalf("response = %#v, want success", res)
+	}
+	if strings.Contains(res.Success.Message, "No task history") {
+		t.Fatalf("history = %q, want all persisted tasks", res.Success.Message)
+	}
+	if !strings.Contains(res.Success.Message, "first") || !strings.Contains(res.Success.Message, "second") {
+		t.Fatalf("history = %q, want both persisted tasks", res.Success.Message)
 	}
 }
 

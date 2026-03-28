@@ -100,6 +100,7 @@ Run the daemon and client from the built binaries:
 ## Useful Commands
 
 - `focus status` shows the current task, cooldown, or break state.
+- `focus history --all` shows every completed task in the persisted history file.
 - `focus reload` reloads daemon configuration from disk.
 - `focus config <key>` shows the current value and default.
 - `focus config <key> <value>` updates one config value and reloads the daemon.

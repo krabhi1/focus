@@ -87,6 +87,49 @@ func TestLoadTodayHistoryFiltersByDate(t *testing.T) {
 	}
 }
 
+func TestLoadAllHistoryReturnsAllRecords(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(historyFileEnv, filepath.Join(dir, "history.jsonl"))
+	now := time.Now()
+
+	first := domain.Task{
+		ID:        1,
+		Title:     "first task",
+		Duration:  30 * time.Minute,
+		StartTime: now.Add(-24 * time.Hour),
+	}
+	second := domain.Task{
+		ID:        2,
+		Title:     "second task",
+		Duration:  45 * time.Minute,
+		StartTime: now,
+	}
+
+	if err := AppendCompletedTask(first); err != nil {
+		t.Fatalf("append first task: %v", err)
+	}
+	if err := AppendCompletedTask(second); err != nil {
+		t.Fatalf("append second task: %v", err)
+	}
+
+	entries, err := LoadAllHistory()
+	if err != nil {
+		t.Fatalf("LoadAllHistory returned error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 history entries, got %d", len(entries))
+	}
+	if entries[0].Task.Title != first.Title {
+		t.Fatalf("first entry = %q, want %q", entries[0].Task.Title, first.Title)
+	}
+	if entries[1].Task.Title != second.Title {
+		t.Fatalf("second entry = %q, want %q", entries[1].Task.Title, second.Title)
+	}
+	if entries[0].CompletedAt.IsZero() || entries[1].CompletedAt.IsZero() {
+		t.Fatal("expected completed_at timestamps to be populated")
+	}
+}
+
 func TestDefaultHistoryPathUsesHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -19,6 +19,11 @@ type historyRecord struct {
 	CompletedAt time.Time `json:"completed_at"`
 }
 
+type HistoryEntry struct {
+	Task        domain.Task
+	CompletedAt time.Time
+}
+
 func DefaultHistoryPath() (string, error) {
 	if path := os.Getenv(historyFileEnv); path != "" {
 		return path, nil
@@ -31,6 +36,28 @@ func DefaultHistoryPath() (string, error) {
 }
 
 func LoadTodayHistory() ([]domain.Task, error) {
+	entries, err := loadHistoryEntries()
+	if err != nil {
+		return nil, err
+	}
+
+	todayStart := startOfToday(time.Now())
+	todayEnd := todayStart.Add(24 * time.Hour)
+	tasks := make([]domain.Task, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Task.StartTime.Before(todayStart) || !entry.Task.StartTime.Before(todayEnd) {
+			continue
+		}
+		tasks = append(tasks, entry.Task)
+	}
+	return tasks, nil
+}
+
+func LoadAllHistory() ([]HistoryEntry, error) {
+	return loadHistoryEntries()
+}
+
+func loadHistoryEntries() ([]HistoryEntry, error) {
 	path, err := DefaultHistoryPath()
 	if err != nil {
 		return nil, err
@@ -45,25 +72,23 @@ func LoadTodayHistory() ([]domain.Task, error) {
 	}
 	defer file.Close()
 
-	todayStart := startOfToday(time.Now())
-	todayEnd := todayStart.Add(24 * time.Hour)
 	scanner := bufio.NewScanner(file)
-	tasks := make([]domain.Task, 0)
+	entries := make([]HistoryEntry, 0)
 
 	for scanner.Scan() {
 		var record historyRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			continue
 		}
-		if record.StartTime.Before(todayStart) || !record.StartTime.Before(todayEnd) {
-			continue
-		}
-		tasks = append(tasks, record.Task)
+		entries = append(entries, HistoryEntry{
+			Task:        record.Task,
+			CompletedAt: record.CompletedAt,
+		})
 	}
 	if err := scanner.Err(); err != nil {
-		return tasks, fmt.Errorf("scan history file: %w", err)
+		return entries, fmt.Errorf("scan history file: %w", err)
 	}
-	return tasks, nil
+	return entries, nil
 }
 
 func AppendCompletedTask(task domain.Task) error {

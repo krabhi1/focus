@@ -116,6 +116,15 @@ func main() {
 		}
 		printResponse(res)
 	case "history":
+		req, err := buildHistoryRequest(os.Args[2:])
+		if err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
+			fmt.Println(colorError("Error:"), err)
+			return
+		}
+
 		conn, err := connectDaemon()
 		if err != nil {
 			fmt.Println(colorError("Daemon not running."))
@@ -123,9 +132,6 @@ func main() {
 		}
 		defer conn.Close()
 
-		req := protocol.Request{
-			Command: "history",
-		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
 			fmt.Println(colorError("Error sending request:"), err)
@@ -179,7 +185,7 @@ func printHelp() {
 	fmt.Println("  " + colorInfo("focus status"))
 	fmt.Println("  " + colorInfo("focus start --name <task> --duration <short|medium|long|deep> [--no-break]"))
 	fmt.Println("  " + colorInfo("focus cancel"))
-	fmt.Println("  " + colorInfo("focus history"))
+	fmt.Println("  " + colorInfo("focus history [--all]"))
 	fmt.Println("  " + colorInfo("focus reload"))
 	fmt.Println("  " + colorInfo("focus config <key> <value>"))
 	fmt.Println("  " + colorInfo("focus doctor"))
@@ -187,6 +193,33 @@ func printHelp() {
 	fmt.Println("  " + colorInfo("focus update [--version <tag>] [--prefix <path>] [--yes]"))
 	fmt.Println("  " + colorInfo("focus uninstall [--prefix <path>]"))
 	fmt.Println("  " + colorInfo("focus help"))
+}
+
+func printHistoryHelp() {
+	fmt.Println(colorHeading("Usage:"))
+	fmt.Println("  " + colorInfo("focus history [--all]"))
+	fmt.Println("")
+	fmt.Println(colorHeading("Flags:"))
+	fmt.Println("  " + colorLabel("--all") + "   Show all persisted history instead of today-only history")
+}
+
+func buildHistoryRequest(args []string) (protocol.Request, error) {
+	historyCmd := flag.NewFlagSet("history", flag.ContinueOnError)
+	historyCmd.SetOutput(io.Discard)
+	all := historyCmd.Bool("all", false, "Show all persisted history instead of today-only history")
+	historyCmd.Usage = func() {
+		printHistoryHelp()
+	}
+	if err := historyCmd.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			historyCmd.Usage()
+		}
+		return protocol.Request{}, err
+	}
+	return protocol.Request{
+		Command:    "history",
+		HistoryAll: *all,
+	}, nil
 }
 
 func buildStartRequest(args []string) (protocol.Request, error) {
