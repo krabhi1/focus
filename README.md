@@ -8,8 +8,9 @@ Project site: [focus.krabhi.me](https://focus.krabhi.me)
 
 Current runtime model:
 
-- `internal/app/runtime.go` owns lifecycle timers and side effects.
-- `internal/domain` owns phase/deadline transitions (`idle`, `active`, `break`, `pending_cooldown`, `cooldown`).
+- `internal/app/runtime.go` orchestrates runtime flow, deadlines, and side effects.
+- `internal/domain` owns phase transitions (`idle`, `active`, `break`, `pending_cooldown`, `cooldown`).
+- `internal/scheduler` owns deadline execution.
 - `internal/storage` owns config, presets, history, and socket helpers.
 
 ## Rules

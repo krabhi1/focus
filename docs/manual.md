@@ -10,13 +10,14 @@ Focus has two user-facing binaries:
 - `focusd`: the background daemon
 - `focus`: the CLI client
 
-The daemon holds the state machine, timers, screen lock actions, notifications, and the `focus-events` helper.
+The daemon owns runtime flow, deadline scheduling, screen lock actions, notifications, and the `focus-events` helper.
 The client sends commands to the daemon over the Unix socket.
 
 Current architecture:
 
-- `internal/app/runtime.go` executes runtime flow and side effects.
-- `internal/domain` is the canonical phase/deadline reducer.
+- `internal/app/runtime.go` orchestrates runtime flow and side effects.
+- `internal/domain` is the canonical phase reducer.
+- `internal/scheduler` executes deadlines.
 - `internal/storage` provides config, presets, history persistence, and socket path helpers.
 
 ## Runtime Paths
@@ -63,7 +64,7 @@ Example:
   },
   "idle": {
     "warn_after": "3m",
-  "lock_after": "2m"
+    "lock_after": "2m"
   },
   "alert": {
     "repeat_interval": "3s"
@@ -134,7 +135,7 @@ Daemon-side idle policy.
 - `idle.warn_after`: delay after `idle entered` before warning
 - `idle.lock_after`: delay after `idle entered` before locking
 
-The daemon now uses `focus-events` idle transitions, so this section is only about what the daemon does after idle is detected.
+The daemon now uses `focus-events` idle transitions, so this section is about what the daemon does after idle is detected.
 
 ### `focus-events` defaults
 
