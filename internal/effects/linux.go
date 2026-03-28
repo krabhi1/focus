@@ -1,7 +1,6 @@
 package effects
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +9,21 @@ import (
 
 type RealActions struct{}
 type NoopActions struct{}
+
+type commandSpec struct {
+	name string
+	args []string
+}
+
+var (
+	commandLookPath = exec.LookPath
+	commandRun      = func(name string, args ...string) error {
+		return exec.Command(name, args...).Run()
+	}
+	sessionIDValue = func() string {
+		return strings.TrimSpace(os.Getenv("XDG_SESSION_ID"))
+	}
+)
 
 func resolveAssetPath(path string) string {
 	if path == "" {
@@ -42,27 +56,76 @@ func resolveAssetPath(path string) string {
 }
 
 func (RealActions) LockScreen() {
-	if err := exec.Command("xdg-screensaver", "lock").Run(); err != nil {
-		fmt.Printf("Error locking screen: %v\n", err)
-	}
+	tryCommands(lockBackends())
 }
 
 func (RealActions) UnlockScreen() {
-	if err := exec.Command("cinnamon-screensaver-command", "-d").Run(); err != nil {
-		fmt.Printf("Error unlocking screen: %v\n", err)
+	tryCommands(unlockBackends())
+}
+
+func lockBackends() []commandSpec {
+	var specs []commandSpec
+	if sessionID := sessionIDValue(); sessionID != "" {
+		specs = append(specs, commandSpec{
+			name: "loginctl",
+			args: []string{"lock-session", sessionID},
+		})
+	}
+	specs = append(specs,
+		commandSpec{name: "xdg-screensaver", args: []string{"lock"}},
+		commandSpec{name: "cinnamon-screensaver-command", args: []string{"-l"}},
+		commandSpec{name: "gnome-screensaver-command", args: []string{"-l"}},
+	)
+	return specs
+}
+
+func unlockBackends() []commandSpec {
+	var specs []commandSpec
+	if sessionID := sessionIDValue(); sessionID != "" {
+		specs = append(specs, commandSpec{
+			name: "loginctl",
+			args: []string{"unlock-session", sessionID},
+		})
+	}
+	specs = append(specs,
+		commandSpec{name: "cinnamon-screensaver-command", args: []string{"-d"}},
+		commandSpec{name: "gnome-screensaver-command", args: []string{"-d"}},
+	)
+	return specs
+}
+
+func tryCommands(specs []commandSpec) {
+	for _, spec := range specs {
+		if spec.name == "" {
+			continue
+		}
+		if _, err := commandLookPath(spec.name); err != nil {
+			continue
+		}
+		if err := commandRun(spec.name, spec.args...); err == nil {
+			return
+		}
 	}
 }
 
 func (RealActions) PlaySound(path string) {
 	resolvedPath := resolveAssetPath(path)
-	if err := exec.Command("paplay", resolvedPath).Run(); err != nil {
-		fmt.Printf("Error playing sound: %v\n", err)
-	}
+	tryCommands(soundBackends(resolvedPath))
 }
 
 func (RealActions) Notify(title, message string) {
-	if err := exec.Command("notify-send", "-e", "-t", "2000", "-i", "dialog-information", title, message).Run(); err != nil {
-		fmt.Printf("Error sending notification: %v\n", err)
+	_ = exec.Command("notify-send", "-e", "-t", "2000", "-i", "dialog-information", title, message).Run()
+}
+
+func soundBackends(path string) []commandSpec {
+	return []commandSpec{
+		{name: "paplay", args: []string{path}},
+		{name: "pw-play", args: []string{path}},
+		{name: "aplay", args: []string{path}},
+		{name: "mpv", args: []string{"--no-video", "--really-quiet", path}},
+		{name: "ffplay", args: []string{"-nodisp", "-autoexit", "-loglevel", "quiet", path}},
+		{name: "cvlc", args: []string{"--play-and-exit", "--intf", "dummy", path}},
+		{name: "mpg123", args: []string{path}},
 	}
 }
 

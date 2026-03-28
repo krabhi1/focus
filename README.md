@@ -24,7 +24,7 @@ Current runtime model:
   - **deep (90 min):** Break starts at 45 minutes for 10 minutes.
 - **Break Enforcement (long/deep only):**
   - You get a reminder 2 minutes before the break starts.
-  - At break start, Focus locks the screen.
+  - At break start, Focus locks the screen using the best available session/backend command.
   - If the screen is unlocked during break or cooldown, Focus warns once and relocks after the configured `relock_delay`.
 - **Post-Task Cooldown:** Cooldown starts only after task completion (not during the in-task break).
 - **Sleep/Wake Tracking:** Focus pauses active task timers when the machine sleeps and resumes them on wake.
@@ -63,14 +63,16 @@ For now this is only available in Linux. It depends on a systemd user session an
 
 Runtime dependencies used by `focusd`:
 
-- `xdg-screensaver` for screen lock
+- `loginctl` or `xdg-screensaver` for screen lock
+- `cinnamon-screensaver-command` or `gnome-screensaver-command` for unlock, if your desktop exposes one
 - `notify-send` for desktop notifications
-- `paplay` for task-ending sound (`assets/task-ending.mp3`)
+- `paplay`, `pw-play`, `aplay`, `mpv`, `ffplay`, `cvlc`, or `mpg123` for task-ending sound (`assets/task-ending.mp3`)
 - `focus-events` helper binary (installed alongside `focusd`)
 
 Environment-specific notes:
 
-- `cinnamon-screensaver-command` is used for unlock action (currently not part of normal user flow).
+- Lock and unlock are best-effort and depend on the desktop/session providing a supported command.
+- Sound playback is best-effort and uses the first available audio tool.
 - `systemctl --user` is needed only if you use the user service install path.
 
 Runtime observability:

@@ -64,10 +64,10 @@ Expected flow:
 
 1. Break starts after about 5 seconds.
 2. The screen locks when break starts.
-3. If you unlock during break or cooldown, it re-locks after the relock delay.
+3. If your desktop supports unlock during break or cooldown, it re-locks after the relock delay.
 4. Break ends after 3 seconds and unlocks the screen.
-5. The completion sound repeats every second while the user is idle.
-6. The sound stops when `focus-events` reports user activity again or when the screen unlocks.
+5. The completion sound repeats every second while the screen is locked.
+6. The sound stops when the screen unlocks.
 7. Cooldown starts after task completion and blocks new tasks until it expires.
 
 ## Verify State

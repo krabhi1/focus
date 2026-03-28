@@ -101,6 +101,8 @@ Shared relock delay used when the user unlocks during break or cooldown.
 
 - `relock_delay`: how long to wait before locking again after an unlock during break or cooldown; `0s` means lock immediately
 
+Lock and unlock support are best-effort. Focus picks the first available session/backend command and does nothing if none are present.
+
 ### `cooldown_start_delay`
 
 Delay after task completion before cooldown begins.
@@ -142,6 +144,8 @@ These values control the wall-clock no-task timer. They are not tied to helper i
 Completion alert settings.
 
 - `alert.repeat_interval`: how often the completion sound repeats while the screen is locked after task completion
+
+Sound playback is best-effort. Focus tries common headless audio tools and skips sound if none are installed.
 
 ## Config Validation
 

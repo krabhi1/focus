@@ -270,9 +270,18 @@ func warnMissingRuntimeDependencies(lookPath func(string) (string, error)) {
 		name     string
 		required bool
 	}{
-		{name: "xdg-screensaver", required: true},
+		{name: "loginctl", required: false},
+		{name: "xdg-screensaver", required: false},
+		{name: "cinnamon-screensaver-command", required: false},
+		{name: "gnome-screensaver-command", required: false},
 		{name: "notify-send", required: true},
 		{name: "paplay", required: false},
+		{name: "pw-play", required: false},
+		{name: "aplay", required: false},
+		{name: "mpv", required: false},
+		{name: "ffplay", required: false},
+		{name: "cvlc", required: false},
+		{name: "mpg123", required: false},
 	}
 	for _, dep := range deps {
 		if _, err := lookPath(dep.name); err == nil {

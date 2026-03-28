@@ -35,15 +35,24 @@ func TestWarnMissingRuntimeDependencies(t *testing.T) {
 
 	warnMissingRuntimeDependencies(lookPath)
 
-	if len(calls) != 3 {
-		t.Fatalf("lookPath calls = %d, want 3", len(calls))
+	if len(calls) != 12 {
+		t.Fatalf("lookPath calls = %d, want 12", len(calls))
 	}
 	got := buf.String()
 	if !strings.Contains(got, "missing dependency 'notify-send'") {
 		t.Fatalf("log output = %q, want missing notify-send warning", got)
 	}
+	if strings.Contains(got, "loginctl") {
+		t.Fatalf("log output = %q, did not expect warning for loginctl", got)
+	}
 	if strings.Contains(got, "xdg-screensaver") {
 		t.Fatalf("log output = %q, did not expect warning for xdg-screensaver", got)
+	}
+	if strings.Contains(got, "cinnamon-screensaver-command") {
+		t.Fatalf("log output = %q, did not expect warning for cinnamon-screensaver-command", got)
+	}
+	if strings.Contains(got, "gnome-screensaver-command") {
+		t.Fatalf("log output = %q, did not expect warning for gnome-screensaver-command", got)
 	}
 	if strings.Contains(got, "paplay") {
 		t.Fatalf("log output = %q, did not expect warning for paplay", got)
