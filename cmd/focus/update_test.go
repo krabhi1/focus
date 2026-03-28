@@ -13,6 +13,41 @@ import (
 	"testing"
 )
 
+func TestUpdateNoopsWhenVersionAlreadyInstalled(t *testing.T) {
+	oldVersion := version
+	version = "v0.1.2"
+	t.Cleanup(func() {
+		version = oldVersion
+	})
+
+	dir := t.TempDir()
+	prefix := filepath.Join(dir, "prefix")
+
+	if err := Update("v0.1.2", prefix, true); err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+}
+
+func TestUpdateNoopsWhenLatestMatchesInstalledVersion(t *testing.T) {
+	oldVersion := version
+	oldResolveLatest := resolveLatestReleaseFn
+	version = "v0.1.2"
+	resolveLatestReleaseFn = func(string) (string, error) {
+		return "v0.1.2", nil
+	}
+	t.Cleanup(func() {
+		version = oldVersion
+		resolveLatestReleaseFn = oldResolveLatest
+	})
+
+	dir := t.TempDir()
+	prefix := filepath.Join(dir, "prefix")
+
+	if err := Update("", prefix, true); err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+}
+
 func TestParseChecksumEntry(t *testing.T) {
 	entry, err := parseChecksumEntry("abc123  ./focus_v0.1.2_linux_amd64.tar.gz")
 	if err != nil {

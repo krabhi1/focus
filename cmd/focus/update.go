@@ -30,6 +30,8 @@ type checksumEntry struct {
 	Name string
 }
 
+var resolveLatestReleaseFn = resolveLatestRelease
+
 func Update(versionArg, prefix string, yes bool) error {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		return fmt.Errorf("release updates are currently available only for linux/amd64")
@@ -42,10 +44,14 @@ func Update(versionArg, prefix string, yes bool) error {
 
 	tag := versionArg
 	if tag == "" || tag == "latest" {
-		tag, err = resolveLatestRelease(releaseRepo())
+		tag, err = resolveLatestReleaseFn(releaseRepo())
 		if err != nil {
 			return err
 		}
+	}
+	if currentVersion := strings.TrimSpace(version); currentVersion != "" && currentVersion == tag {
+		fmt.Printf("Focus is already up to date (%s).\n", tag)
+		return nil
 	}
 
 	assetName, err := releaseAssetName(tag)
