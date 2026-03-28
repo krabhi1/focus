@@ -167,3 +167,77 @@ func TestLoadRejectsLegacyBreakRelockDelay(t *testing.T) {
 		t.Fatalf("error = %q, want top-level relock_delay guidance", err.Error())
 	}
 }
+
+func TestUpdateConfigValueWritesAndPreservesOtherFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"idle":{"warn_after":"1m","lock_after":"2m"},"relock_delay":"0s"}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	if err := UpdateConfigValue(path, "idle.lock_after", "3m"); err != nil {
+		t.Fatalf("UpdateConfigValue returned error: %v", err)
+	}
+
+	cfg, exists, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !exists {
+		t.Fatal("exists = false, want true")
+	}
+	if cfg.Idle.WarnAfter != "1m" {
+		t.Fatalf("idle.warn_after = %q, want 1m", cfg.Idle.WarnAfter)
+	}
+	if cfg.Idle.LockAfter != "3m" {
+		t.Fatalf("idle.lock_after = %q, want 3m", cfg.Idle.LockAfter)
+	}
+	if cfg.RelockDelay != "0s" {
+		t.Fatalf("relock_delay = %q, want 0s", cfg.RelockDelay)
+	}
+}
+
+func TestUpdateConfigValueRejectsUnknownKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := UpdateConfigValue(path, "bad.key", "1m")
+	if err == nil {
+		t.Fatal("expected error for unknown key")
+	}
+	if !strings.Contains(err.Error(), "unknown config key") {
+		t.Fatalf("error = %q, want unknown config key", err.Error())
+	}
+}
+
+func TestUpdateConfigValueRejectsInvalidDuration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := UpdateConfigValue(path, "idle.warn_after", "bad")
+	if err == nil {
+		t.Fatal("expected invalid duration error")
+	}
+	if !strings.Contains(err.Error(), "invalid duration") && !strings.Contains(err.Error(), "parse duration") {
+		t.Fatalf("error = %q, want duration parse failure", err.Error())
+	}
+}
+
+func TestUpdateConfigValueRejectsInvalidResultingConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"idle":{"warn_after":"1m","lock_after":"2m"}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := UpdateConfigValue(path, "idle.warn_after", "3m")
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "idle.warn_after must be less than idle.lock_after") {
+		t.Fatalf("error = %q, want idle warning validation failure", err.Error())
+	}
+}

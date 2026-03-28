@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -157,7 +158,7 @@ func DefaultRuntimeConfig() RuntimeConfig {
 }
 
 func SetRuntimeConfig(cfg RuntimeConfig) error {
-	if err := validateRuntimeConfig(cfg); err != nil {
+	if err := ValidateRuntimeConfig(cfg); err != nil {
 		return err
 	}
 	runtimeConfigMu.Lock()
@@ -172,7 +173,7 @@ func GetRuntimeConfig() RuntimeConfig {
 	return runtimeConfig
 }
 
-func validateRuntimeConfig(cfg RuntimeConfig) error {
+func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 	positive := []struct {
 		name  string
 		value time.Duration
@@ -237,6 +238,96 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 	return nil
 }
 
+func SupportedConfigKeys() []string {
+	return []string{
+		"task.short",
+		"task.medium",
+		"task.long",
+		"task.deep",
+		"cooldown.short",
+		"cooldown.long",
+		"cooldown.deep",
+		"break.long_start",
+		"break.deep_start",
+		"break.warning",
+		"break.long_duration",
+		"break.deep_duration",
+		"relock_delay",
+		"cooldown_start_delay",
+		"idle.warn_after",
+		"idle.lock_after",
+		"alert.repeat_interval",
+	}
+}
+
+func DescribeConfigKey(cfg RuntimeConfig, key string) (string, error) {
+	switch key {
+	case "task.short":
+		return cfg.TaskShort.String(), nil
+	case "task.medium":
+		return cfg.TaskMedium.String(), nil
+	case "task.long":
+		return cfg.TaskLong.String(), nil
+	case "task.deep":
+		return cfg.TaskDeep.String(), nil
+	case "cooldown.short":
+		return cfg.CooldownShort.String(), nil
+	case "cooldown.long":
+		return cfg.CooldownLong.String(), nil
+	case "cooldown.deep":
+		return cfg.CooldownDeep.String(), nil
+	case "break.long_start":
+		return cfg.BreakLongStart.String(), nil
+	case "break.deep_start":
+		return cfg.BreakDeepStart.String(), nil
+	case "break.warning":
+		return cfg.BreakWarning.String(), nil
+	case "break.long_duration":
+		return cfg.BreakLongDuration.String(), nil
+	case "break.deep_duration":
+		return cfg.BreakDeepDuration.String(), nil
+	case "relock_delay":
+		return cfg.RelockDelay.String(), nil
+	case "cooldown_start_delay":
+		return cfg.CooldownStartDelay.String(), nil
+	case "idle.warn_after":
+		return cfg.IdleWarnAfter.String(), nil
+	case "idle.lock_after":
+		return cfg.IdleLockAfter.String(), nil
+	case "alert.repeat_interval":
+		return cfg.CompletionAlertRepeatInterval.String(), nil
+	default:
+		return "", fmt.Errorf("unknown config key %q", key)
+	}
+}
+
+func UpdateConfigValue(path, key, rawValue string) error {
+	raw, _, err := loadConfigMap(path)
+	if err != nil {
+		return err
+	}
+	if raw == nil {
+		raw = map[string]any{}
+	}
+
+	if err := applyConfigValue(raw, key, rawValue); err != nil {
+		return err
+	}
+
+	fileCfg, err := configMapToFile(raw)
+	if err != nil {
+		return err
+	}
+	resolved, err := ResolveRuntimeConfig(DefaultRuntimeConfig(), fileCfg, Overrides{})
+	if err != nil {
+		return err
+	}
+	if err := ValidateRuntimeConfig(resolved); err != nil {
+		return err
+	}
+	return writeConfigMap(path, raw)
+}
+
 func DefaultPath() (string, error) {
 	if p := os.Getenv("FOCUS_CONFIG"); p != "" {
 		return p, nil
@@ -264,6 +355,42 @@ func Load(path string) (File, bool, error) {
 		return File{}, true, fmt.Errorf("parse config JSON: %w", err)
 	}
 	return cfg, true, nil
+}
+
+func loadConfigMap(path string) (map[string]any, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return map[string]any{}, false, nil
+		}
+		return nil, false, fmt.Errorf("read config: %w", err)
+	}
+	if err := rejectLegacyBreakRelockDelay(data); err != nil {
+		return nil, true, err
+	}
+	var raw map[string]any
+	if len(data) == 0 {
+		return map[string]any{}, true, nil
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, true, fmt.Errorf("parse config JSON: %w", err)
+	}
+	if raw == nil {
+		raw = map[string]any{}
+	}
+	return raw, true, nil
+}
+
+func configMapToFile(raw map[string]any) (File, error) {
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return File{}, fmt.Errorf("marshal config JSON: %w", err)
+	}
+	var cfg File
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return File{}, fmt.Errorf("parse config JSON: %w", err)
+	}
+	return cfg, nil
 }
 
 func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overrides) (RuntimeConfig, error) {
@@ -357,6 +484,70 @@ func applyOverride(dst *time.Duration, value *time.Duration) {
 	if value != nil {
 		*dst = *value
 	}
+}
+
+func applyConfigValue(raw map[string]any, key, rawValue string) error {
+	section, leaf, ok := strings.Cut(key, ".")
+	if !ok {
+		switch key {
+		case "relock_delay", "cooldown_start_delay":
+			raw[key] = rawValue
+			return nil
+		default:
+			return fmt.Errorf("unknown config key %q", key)
+		}
+	}
+
+	sectionMap, _ := raw[section].(map[string]any)
+	if sectionMap == nil {
+		sectionMap = map[string]any{}
+		raw[section] = sectionMap
+	}
+
+	switch section {
+	case "task", "cooldown", "break", "idle", "alert":
+		switch leaf {
+		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after", "repeat_interval":
+			sectionMap[leaf] = rawValue
+			return nil
+		default:
+			return fmt.Errorf("unknown config key %q", key)
+		}
+	default:
+		return fmt.Errorf("unknown config key %q", key)
+	}
+}
+
+func writeConfigMap(path string, raw map[string]any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config JSON: %w", err)
+	}
+	data = append(data, '\n')
+
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	tmp, err := os.CreateTemp(dir, "."+base+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp config: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replace config file: %w", err)
+	}
+	return nil
 }
 
 func rejectLegacyBreakRelockDelay(data []byte) error {

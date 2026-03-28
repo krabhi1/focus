@@ -294,6 +294,20 @@ focus reload
 
 Use this after editing the config file.
 
+### `focus config`
+
+Reads or updates one config value in the JSON file.
+
+Example:
+
+```bash
+focus config idle.lock_after
+focus config idle.lock_after 3m
+```
+
+Use one argument to read the current value and default. Use two arguments to update the value and reload the daemon.
+The key uses dot notation for nested fields. Supported values are duration strings.
+
 ### `focus doctor`
 
 Checks local setup and dependencies.
