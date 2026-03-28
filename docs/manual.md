@@ -15,9 +15,9 @@ The client sends commands to the daemon over the Unix socket.
 
 Current architecture:
 
-- `cmd/daemon/runtime.go` executes runtime flow and side effects.
-- `internal/core` is the canonical phase/deadline reducer.
-- `internal/state` provides config, presets, history persistence, and socket path helpers.
+- `internal/app/runtime.go` executes runtime flow and side effects.
+- `internal/domain` is the canonical phase/deadline reducer.
+- `internal/storage` provides config, presets, history persistence, and socket path helpers.
 
 ## Runtime Paths
 
@@ -25,13 +25,13 @@ These paths are resolved at runtime.
 
 - Config file: `~/.config/focus/config.json`
 - Config override: `FOCUS_CONFIG=/path/to/config.json`
-- Socket path: resolved by `state.DefaultSocketPath()`
+- Socket path: resolved by `storage.DefaultSocketPath()`
 - Socket override: `FOCUS_SOCKET_PATH=/path/to/focus.sock`
 - History log: `~/.config/focus/history.jsonl`
 - History override: `FOCUS_HISTORY_FILE=/path/to/history.jsonl`
 
-The daemon prints the resolved config, socket, and history paths on startup.
-It also prints loaded today-history count and effective runtime durations.
+The daemon prints the resolved config, socket, and history paths on startup when trace mode is enabled.
+It also prints loaded today-history count and effective runtime durations in trace mode.
 
 ## Configuration
 
@@ -177,13 +177,13 @@ These are the daemon-side runtime options.
 Start the daemon from source:
 
 ```bash
-go run ./cmd/daemon
+go run ./cmd/focusd
 ```
 
 Enable runtime flow trace logs:
 
 ```bash
-FOCUS_TRACE_FLOW=1 go run ./cmd/daemon
+FOCUS_TRACE_FLOW=1 go run ./cmd/focusd
 ```
 
 Common flags:
@@ -390,13 +390,13 @@ This reads from the persisted history log and shows the entries loaded for today
 FOCUS_CONFIG=./focus.dev.json \
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
 FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
-go run ./cmd/daemon
+go run ./cmd/focusd
 ```
 
 In another terminal:
 
 ```bash
-FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client start --name demo --duration long
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus start --name demo --duration long
 ```
 
 See [manual smoke test](smoke-test.md) for the full step-by-step flow.
@@ -483,7 +483,7 @@ Recommended overrides for dev runs:
 FOCUS_CONFIG=./focus.dev.json \
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
 FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
-go run ./cmd/daemon
+go run ./cmd/focusd
 ```
 
 ## Troubleshooting
@@ -499,7 +499,7 @@ focus doctor
 Then start the daemon:
 
 ```bash
-go run ./cmd/daemon
+go run ./cmd/focusd
 ```
 
 ### Socket path mismatch
@@ -540,13 +540,13 @@ Typical setup:
 FOCUS_CONFIG=./focus.dev.json \
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
 FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
-go run ./cmd/daemon
+go run ./cmd/focusd
 ```
 
 Then in another terminal:
 
 ```bash
-FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client start --name demo --duration long
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus start --name demo --duration long
 ```
 
 That lets you verify:

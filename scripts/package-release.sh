@@ -77,8 +77,8 @@ for target in "${target_array[@]}"; do
   mkdir -p "$pkg_dir"
 
   echo "Building focus and focusd for $goos/$goarch..."
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$pkg_dir/focus" "$ROOT_DIR/cmd/client"
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/focusd" "$ROOT_DIR/cmd/daemon"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$pkg_dir/focus" "$ROOT_DIR/cmd/focus"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/focusd" "$ROOT_DIR/cmd/focusd"
 
   if [[ "$goos" != "$HOST_GOOS" || "$goarch" != "$HOST_GOARCH" ]]; then
     echo "focus-events native helper currently requires native gcc/libs; cross-build unsupported for $goos/$goarch" >&2
@@ -93,6 +93,7 @@ for target in "${target_array[@]}"; do
 
   cp -r "$ROOT_DIR/assets" "$pkg_dir/assets"
   cp "$ROOT_DIR/README.md" "$pkg_dir/README.md"
+  cp "$ROOT_DIR/install.sh" "$pkg_dir/install.sh"
 
   tarball="focus_${VERSION}_${goos}_${goarch}.tar.gz"
   tar -C "$stage_dir" -czf "$OUT_DIR/$tarball" "$(basename "$pkg_dir")"

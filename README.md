@@ -8,9 +8,9 @@ Project site: [focus.krabhi.me](https://focus.krabhi.me)
 
 Current runtime model:
 
-- `cmd/daemon/runtime.go` owns lifecycle timers and side effects.
-- `internal/core` owns phase/deadline transitions (`idle`, `active`, `break`, `pending_cooldown`, `cooldown`).
-- `internal/state` is now config/preset/history/socket support only.
+- `internal/app/runtime.go` owns lifecycle timers and side effects.
+- `internal/domain` owns phase/deadline transitions (`idle`, `active`, `break`, `pending_cooldown`, `cooldown`).
+- `internal/storage` owns config, presets, history, and socket helpers.
 
 ## Rules
 
@@ -103,11 +103,11 @@ Run the daemon and client from the built binaries:
 - `focus uninstall` removes the installed binaries and user service.
 - `systemctl --user status focusd.service` checks whether the daemon service is running.
 
-Avoid running `go run cmd/daemon/main.go` directly. Use the package path instead if you want to run from source:
+Avoid running `go run cmd/focusd/main.go` directly. Use the package path instead if you want to run from source:
 
 ```bash
-go run ./cmd/daemon
-go run ./cmd/client status
+go run ./cmd/focusd
+go run ./cmd/focus status
 ```
 
 ## Install (user systemd service)
@@ -129,7 +129,7 @@ Manual (recommended for audit): download `install.sh`, review it, then run it.
 Install from local source checkout:
 
 ```bash
-./scripts/install.sh
+./scripts/install-local.sh
 ```
 
 This installs:
@@ -204,9 +204,9 @@ focus reload
 Optional install flags:
 
 ```bash
-./scripts/install.sh --prefix /custom/prefix
-./scripts/install.sh --no-build
-./scripts/install.sh --no-systemd
+./scripts/install-local.sh --prefix /custom/prefix
+./scripts/install-local.sh --no-build
+./scripts/install-local.sh --no-systemd
 ```
 
 For a source checkout, use:

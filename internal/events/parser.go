@@ -20,7 +20,6 @@ func ParseBinaryFrame(frame []byte) (Event, error) {
 	if binary.LittleEndian.Uint16(frame[6:8]) != wireSize {
 		return Event{}, fmt.Errorf("unexpected frame length: %d", binary.LittleEndian.Uint16(frame[6:8]))
 	}
-
 	fields := map[string]string{}
 	kind, err := parseWireKind(frame[4])
 	if err != nil {
@@ -30,27 +29,19 @@ func ParseBinaryFrame(frame []byte) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
-
 	unixMillis := binary.LittleEndian.Uint64(frame[8:16])
 	ts := time.UnixMilli(int64(unixMillis))
 	fields["event"] = string(kind)
 	if state != "" {
 		fields["state"] = state
 	}
-
 	idleThreshold := binary.LittleEndian.Uint32(frame[16:20])
 	idlePoll := binary.LittleEndian.Uint32(frame[20:24])
 	if kind == KindListener {
 		fields["idle_threshold"] = strconv.FormatUint(uint64(idleThreshold), 10)
 		fields["idle_poll"] = strconv.FormatUint(uint64(idlePoll), 10)
 	}
-
-	return Event{
-		Timestamp: ts,
-		Kind:      kind,
-		State:     state,
-		Fields:    fields,
-	}, nil
+	return Event{Timestamp: ts, Kind: kind, State: state, Fields: fields}, nil
 }
 
 func parseWireKind(raw byte) (Kind, error) {

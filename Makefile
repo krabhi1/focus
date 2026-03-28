@@ -3,8 +3,6 @@ BINARY_NAME=focus
 DAEMON_NAME=focusd
 EVENTS_NAME=focus-events
 DIST_DIR=dist
-NATIVE_SRC=native/session_event_listener.c
-NATIVE_FLAGS=$(shell pkg-config --cflags --libs libsystemd x11 xscrnsaver)
 
 .PHONY: all build clean test fmt install uninstall package-release check-release
 
@@ -15,12 +13,13 @@ all: clean build
 build:
 	@echo "Building $(BINARY_NAME), $(DAEMON_NAME), and $(EVENTS_NAME)..."
 	@mkdir -p $(DIST_DIR)
-	@go build -ldflags="-X main.version=$(BINARY_VERSION)" -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/client
-	@go build -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/daemon
-	@gcc -Wall -Wextra -O2 $(NATIVE_SRC) -o $(DIST_DIR)/$(EVENTS_NAME) $(NATIVE_FLAGS)
+	@go build -ldflags="-X main.version=$(BINARY_VERSION)" -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/focus
+	@go build -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/focusd
+	@native_flags="$$(pkg-config --cflags --libs libsystemd x11 xscrnsaver)"; \
+		gcc -Wall -Wextra -O2 ./native/session_event_listener.c -o $(DIST_DIR)/$(EVENTS_NAME) $$native_flags
 
 run-daemon:
-	@go run ./cmd/daemon
+	@go run ./cmd/focusd
 
 clean:
 	@echo "Cleaning $(DIST_DIR) directory..."
@@ -34,10 +33,9 @@ test:
 fmt:
 	@echo "Formatting files..."
 	@go fmt ./...
-	@clang-format -i $(NATIVE_SRC)
 
 install:
-	@./scripts/install.sh
+	@./scripts/install-local.sh
 
 uninstall:
 	@./scripts/uninstall.sh

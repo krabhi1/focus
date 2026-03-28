@@ -22,46 +22,28 @@ func Start(ctx context.Context, idleThresholdSeconds, idlePollSeconds int) (*Lis
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := exec.CommandContext(
-		ctx,
-		helperPath,
-		"--format=binary",
-		fmt.Sprintf("%d", idleThresholdSeconds),
-		fmt.Sprintf("%d", idlePollSeconds),
-	)
-
+	cmd := exec.CommandContext(ctx, helperPath, "--format=binary", fmt.Sprintf("%d", idleThresholdSeconds), fmt.Sprintf("%d", idlePollSeconds))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open helper stdout: %w", err)
 	}
-
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open helper stderr: %w", err)
 	}
-
 	eventCh := make(chan Event)
 	errCh := make(chan error, 2)
-
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start helper: %w", err)
 	}
-
 	go scanBinaryStdout(stdout, eventCh, errCh)
 	go logStderr(stderr)
 	go waitForExit(cmd, errCh)
-
-	return &Listener{
-		cmd:    cmd,
-		Events: eventCh,
-		Errors: errCh,
-	}, nil
+	return &Listener{cmd: cmd, Events: eventCh, Errors: errCh}, nil
 }
 
 func scanBinaryStdout(stdout io.ReadCloser, eventCh chan<- Event, errCh chan<- error) {
 	defer close(eventCh)
-
 	frame := make([]byte, wireSize)
 	for {
 		_, err := io.ReadFull(stdout, frame)
@@ -72,13 +54,11 @@ func scanBinaryStdout(stdout io.ReadCloser, eventCh chan<- Event, errCh chan<- e
 			errCh <- fmt.Errorf("read helper stdout: %w", err)
 			return
 		}
-
 		event, err := ParseBinaryFrame(frame)
 		if err != nil {
 			errCh <- err
 			continue
 		}
-
 		eventCh <- event
 	}
 }
@@ -107,17 +87,10 @@ func resolveHelperPath() (string, error) {
 			return candidate, nil
 		}
 	}
-
-	candidates := []string{
-		filepath.Join("dist", "focus-events"),
-		"focus-events",
-	}
-
-	for _, candidate := range candidates {
+	for _, candidate := range []string{filepath.Join("dist", "focus-events"), "focus-events"} {
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			return candidate, nil
 		}
 	}
-
 	return "", fmt.Errorf("focus-events helper not found")
 }

@@ -47,7 +47,7 @@ FOCUS_CONFIG=./focus.dev.json \
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock \
 FOCUS_HISTORY_FILE=/tmp/focus-history.jsonl \
 FOCUS_TRACE_FLOW=1 \
-go run ./cmd/daemon --events-idle-threshold 5s --events-idle-poll 1s
+go run ./cmd/focusd --events-idle-threshold 5s --events-idle-poll 1s
 ```
 
 ## Exercise The Flow
@@ -55,7 +55,7 @@ go run ./cmd/daemon --events-idle-threshold 5s --events-idle-poll 1s
 In another terminal:
 
 ```bash
-FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client start --name demo --duration long
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus start --name demo --duration long
 ```
 
 Expected flow:
@@ -73,8 +73,8 @@ Expected flow:
 Check status and history:
 
 ```bash
-FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client status
-FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/client history
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus status
+FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus history
 ```
 
 ## Cleanup
