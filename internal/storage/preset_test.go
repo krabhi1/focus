@@ -52,14 +52,20 @@ func TestResolveTaskPresetDuration(t *testing.T) {
 
 func TestDefaultRuntimeConfigDefaults(t *testing.T) {
 	cfg := DefaultRuntimeConfig()
-	if cfg.RelockDelay != 0 {
-		t.Fatalf("RelockDelay = %s, want 0s", cfg.RelockDelay)
+	if cfg.RelockDelay != 5*time.Second {
+		t.Fatalf("RelockDelay = %s, want 5s", cfg.RelockDelay)
 	}
 	if cfg.CooldownStartDelay != 2*time.Minute {
 		t.Fatalf("CooldownStartDelay = %s, want 2m", cfg.CooldownStartDelay)
 	}
 	if cfg.IdleLockAfter != 2*time.Minute {
 		t.Fatalf("IdleLockAfter = %s, want 2m", cfg.IdleLockAfter)
+	}
+	if cfg.BreakDeepDuration != 5*time.Minute {
+		t.Fatalf("BreakDeepDuration = %s, want 5m", cfg.BreakDeepDuration)
+	}
+	if cfg.CompletionAlertRepeatInterval != 5*time.Second {
+		t.Fatalf("CompletionAlertRepeatInterval = %s, want 5s", cfg.CompletionAlertRepeatInterval)
 	}
 }
 

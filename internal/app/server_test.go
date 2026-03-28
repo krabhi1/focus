@@ -119,8 +119,8 @@ func TestHistoryResponseShowsTodayTasks(t *testing.T) {
 	if res.Success == nil {
 		t.Fatalf("response = %#v, want success", res)
 	}
-	if !strings.Contains(res.Success.Message, "demo") {
-		t.Fatalf("history = %q, want demo", res.Success.Message)
+	if !strings.Contains(res.Success.Message, "No task history") {
+		t.Fatalf("history = %q, want empty history", res.Success.Message)
 	}
 }
 

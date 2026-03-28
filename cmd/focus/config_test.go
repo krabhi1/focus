@@ -58,7 +58,7 @@ func TestRunConfigReloadFailureStillSucceeds(t *testing.T) {
 
 	t.Setenv("FOCUS_CONFIG", path)
 
-	if err := runConfig([]string{"relock_delay", "0s"}, func() error {
+	if err := runConfig([]string{"relock_delay", "5s"}, func() error {
 		return os.ErrNotExist
 	}); err != nil {
 		t.Fatalf("runConfig returned error: %v", err)
@@ -71,8 +71,8 @@ func TestRunConfigReloadFailureStillSucceeds(t *testing.T) {
 	if !exists {
 		t.Fatal("exists = false, want true")
 	}
-	if cfg.RelockDelay != "0s" {
-		t.Fatalf("relock_delay = %q, want 0s", cfg.RelockDelay)
+	if cfg.RelockDelay != "5s" {
+		t.Fatalf("relock_delay = %q, want 5s", cfg.RelockDelay)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestRunConfigHelpPrintsUsage(t *testing.T) {
 	for _, want := range []string{
 		"focus config <key> [<value>]",
 		"task.short (default: 15m0s)",
-		"relock_delay (default: 0s)",
+		"relock_delay (default: 5s)",
 		"cooldown_start_delay (default: 2m0s)",
 		"focus config idle.lock_after 3m",
 		"Use one argument to read a value.",

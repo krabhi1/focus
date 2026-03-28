@@ -53,21 +53,21 @@ Example:
     "long": "10m",
     "deep": "15m"
   },
-  "relock_delay": "0s",
+  "relock_delay": "5s",
   "cooldown_start_delay": "2m",
   "break": {
     "long_start": "25m",
     "deep_start": "45m",
     "warning": "2m",
     "long_duration": "5m",
-    "deep_duration": "10m"
+    "deep_duration": "5m"
   },
   "idle": {
     "warn_after": "3m",
     "lock_after": "2m"
   },
   "alert": {
-    "repeat_interval": "3s"
+    "repeat_interval": "5s"
   }
 }
 ```
@@ -440,21 +440,21 @@ Typical values are long enough to match real work sessions:
     "long": "10m",
     "deep": "15m"
   },
-  "relock_delay": "0s",
+  "relock_delay": "5s",
   "cooldown_start_delay": "2m",
   "break": {
     "long_start": "25m",
     "deep_start": "45m",
     "warning": "2m",
     "long_duration": "5m",
-    "deep_duration": "10m"
+    "deep_duration": "5m"
   },
   "idle": {
     "warn_after": "3m",
     "lock_after": "2m"
   },
   "alert": {
-    "repeat_interval": "3s"
+    "repeat_interval": "5s"
   }
 }
 ```

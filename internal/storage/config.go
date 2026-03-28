@@ -116,13 +116,13 @@ const (
 	LongTaskBreakStartOffset = 25 * time.Minute
 	DeepTaskBreakStartOffset = 45 * time.Minute
 	BreakWarningOffset       = 2 * time.Minute
-	RelockDelay              = 0 * time.Second
+	RelockDelay              = 5 * time.Second
 	CooldownStartDelay       = 2 * time.Minute
 
 	IdleWarningAfter = 30 * time.Second
 	IdleLockAfter    = 2 * time.Minute
 
-	TaskLockedWaitDuration = 2 * time.Minute
+	TaskLockedWaitDuration = 1 * time.Minute
 )
 
 var (
@@ -145,7 +145,7 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		BreakDeepStart:     DeepTaskBreakStartOffset,
 		BreakWarning:       BreakWarningOffset,
 		BreakLongDuration:  5 * time.Minute,
-		BreakDeepDuration:  10 * time.Minute,
+		BreakDeepDuration:  5 * time.Minute,
 		RelockDelay:        RelockDelay,
 		CooldownStartDelay: CooldownStartDelay,
 
@@ -153,7 +153,7 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		IdleLockAfter:                 IdleLockAfter,
 		EventsIdleThreshold:           10 * time.Second,
 		EventsIdlePoll:                5 * time.Second,
-		CompletionAlertRepeatInterval: 3 * time.Second,
+		CompletionAlertRepeatInterval: 5 * time.Second,
 	}
 }
 

@@ -145,7 +145,7 @@ func TestLoadParsesJSONFile(t *testing.T) {
 		t.Fatalf("idle.warn_after = %q, want 10s", cfg.Idle.WarnAfter)
 	}
 	if cfg.RelockDelay != "30s" {
-		t.Fatalf("relock_delay = %q, want 30s", cfg.RelockDelay)
+		t.Fatalf("relock_delay = %q, want 5s", cfg.RelockDelay)
 	}
 	if cfg.CooldownStartDelay != "10s" {
 		t.Fatalf("cooldown_start_delay = %q, want 10s", cfg.CooldownStartDelay)
@@ -193,7 +193,7 @@ func TestUpdateConfigValueWritesAndPreservesOtherFields(t *testing.T) {
 		t.Fatalf("idle.lock_after = %q, want 3m", cfg.Idle.LockAfter)
 	}
 	if cfg.RelockDelay != "0s" {
-		t.Fatalf("relock_delay = %q, want 0s", cfg.RelockDelay)
+		t.Fatalf("relock_delay = %q, want 5s", cfg.RelockDelay)
 	}
 }
 
