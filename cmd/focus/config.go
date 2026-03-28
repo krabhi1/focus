@@ -35,14 +35,14 @@ func runConfig(args []string, reload func() error) error {
 
 	if reload != nil {
 		if err := reload(); err != nil {
-			fmt.Printf("Config updated. Daemon reload skipped: %v\n", err)
+			fmt.Printf("%s %v\n", colorWarn("Config updated. Daemon reload skipped:"), err)
 			return nil
 		}
-		fmt.Println("Config updated and daemon reloaded.")
+		fmt.Println(colorSuccess("Config updated and daemon reloaded."))
 		return nil
 	}
 
-	fmt.Println("Config updated.")
+	fmt.Println(colorSuccess("Config updated."))
 	return nil
 }
 
@@ -72,10 +72,10 @@ func showConfigValue(key string) error {
 	}
 
 	if current == defaultValue {
-		fmt.Printf("%s = %s (default)\n", key, current)
+		fmt.Printf("%s = %s (default)\n", colorInfo(key), colorSuccess(current))
 		return nil
 	}
-	fmt.Printf("%s = %s (default: %s)\n", key, current, defaultValue)
+	fmt.Printf("%s = %s (default: %s)\n", colorInfo(key), colorSuccess(current), colorMuted(defaultValue))
 	return nil
 }
 
@@ -89,24 +89,24 @@ func isHelpArg(arg string) bool {
 }
 
 func printConfigHelp(defaults storage.RuntimeConfig) {
-	fmt.Println("Usage:")
-	fmt.Println("  focus config <key> [<value>]")
+	fmt.Println(colorHeading("Usage:"))
+	fmt.Println("  " + colorInfo("focus config <key> [<value>]"))
 	fmt.Println("")
-	fmt.Println("Supported keys:")
+	fmt.Println(colorHeading("Supported keys:"))
 	for _, key := range storage.SupportedConfigKeys() {
 		value, err := storage.DescribeConfigKey(defaults, key)
 		if err != nil {
 			continue
 		}
-		fmt.Printf("  %s (default: %s)\n", key, value)
+		fmt.Printf("  %s (default: %s)\n", colorInfo(key), colorMuted(value))
 	}
 	fmt.Println("")
-	fmt.Println("Examples:")
-	fmt.Println("  focus config idle.lock_after 3m")
-	fmt.Println("  focus config relock_delay 0s")
-	fmt.Println("  focus config cooldown_start_delay 2m")
+	fmt.Println(colorHeading("Examples:"))
+	fmt.Println("  " + colorInfo("focus config idle.lock_after 3m"))
+	fmt.Println("  " + colorInfo("focus config relock_delay 0s"))
+	fmt.Println("  " + colorInfo("focus config cooldown_start_delay 2m"))
 	fmt.Println("")
-	fmt.Println("Use dot notation for nested keys. Use one argument to read a value.")
+	fmt.Println(colorMuted("Use dot notation for nested keys. Use one argument to read a value."))
 }
 
 func reloadDaemon() error {

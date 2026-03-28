@@ -11,7 +11,7 @@ import (
 )
 
 func runDoctor() {
-	fmt.Println("Focus Doctor")
+	fmt.Println(colorTitle("Focus Doctor"))
 	fmt.Println("")
 
 	printCommandCheck("focus", true)
@@ -22,8 +22,8 @@ func runDoctor() {
 	printBackendCheck("lock.backend", detectLockBackend())
 	printBackendCheck("unlock.backend", detectUnlockBackend())
 	printBackendCheck("sound.backend", detectSoundBackend())
-	fmt.Println("required: focus-events, notify-send")
-	fmt.Println("optional: lock/unlock and sound backends vary by desktop/session")
+	fmt.Println(colorHeading("required:"), colorSuccess("focus-events, notify-send"))
+	fmt.Println(colorHeading("optional:"), colorMuted("lock/unlock and sound backends vary by desktop/session"))
 
 	socketPath := storage.DefaultSocketPath()
 	fmt.Printf("socket.path: %s\n", socketPath)
@@ -55,26 +55,26 @@ func runDoctor() {
 
 func printCommandCheck(name string, required bool) {
 	if path, err := exec.LookPath(name); err == nil {
-		fmt.Printf("dep.%s: ok (%s)\n", name, path)
+		fmt.Printf("%s %s (%s)\n", colorInfo("dep."+name+":"), colorSuccess("ok"), path)
 		return
 	}
 	if required {
-		fmt.Printf("dep.%s: missing (required)\n", name)
+		fmt.Printf("%s %s\n", colorInfo("dep."+name+":"), colorError("missing (required)"))
 	} else {
-		fmt.Printf("dep.%s: missing (optional)\n", name)
+		fmt.Printf("%s %s\n", colorInfo("dep."+name+":"), colorWarn("missing (optional)"))
 	}
 }
 
 func printBackendCheck(label, backend string) {
 	if backend == "missing" {
-		fmt.Printf("%s: missing\n", label)
+		fmt.Printf("%s %s\n", colorInfo(label+":"), colorWarn("missing"))
 		return
 	}
 	if path, err := exec.LookPath(backend); err == nil {
-		fmt.Printf("%s: %s (%s)\n", label, backend, path)
+		fmt.Printf("%s %s (%s)\n", colorInfo(label+":"), colorSuccess(backend), path)
 		return
 	}
-	fmt.Printf("%s: %s\n", label, backend)
+	fmt.Printf("%s %s\n", colorInfo(label+":"), colorMuted(backend))
 }
 
 func detectLockBackend() string {
@@ -121,7 +121,7 @@ func detectSoundBackend() string {
 
 func printSystemdStatus() {
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		fmt.Println("service.systemd: unavailable (systemctl missing)")
+		fmt.Println(colorInfo("service.systemd:"), colorWarn("unavailable (systemctl missing)"))
 		return
 	}
 
@@ -138,13 +138,13 @@ func printSystemdStatus() {
 		active = "unknown"
 	}
 
-	fmt.Printf("service.enabled: %s\n", enabled)
-	fmt.Printf("service.active: %s\n", active)
+	fmt.Printf("%s %s\n", colorInfo("service.enabled:"), colorSuccess(enabled))
+	fmt.Printf("%s %s\n", colorInfo("service.active:"), colorSuccess(active))
 
 	if enabledErr != nil && enabled == "unknown" {
-		fmt.Printf("service.enabled.err: %v\n", enabledErr)
+		fmt.Printf("%s %s\n", colorInfo("service.enabled.err:"), colorWarn(enabledErr.Error()))
 	}
 	if activeErr != nil && active == "unknown" {
-		fmt.Printf("service.active.err: %v\n", activeErr)
+		fmt.Printf("%s %s\n", colorInfo("service.active.err:"), colorWarn(activeErr.Error()))
 	}
 }

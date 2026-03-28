@@ -79,6 +79,8 @@ Runtime observability:
 
 - Set `FOCUS_TRACE_FLOW=1` to log runtime flow actions and core events.
 
+CLI output is colorized automatically in interactive terminals. Set `NO_COLOR=1` or redirect output to disable colors.
+
 ## Run
 
 Build everything with:

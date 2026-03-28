@@ -5,5 +5,5 @@ import "fmt"
 var version = "dev"
 
 func printVersion() {
-	fmt.Println(version)
+	fmt.Println(colorInfo(version))
 }

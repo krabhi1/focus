@@ -50,7 +50,7 @@ func Update(versionArg, prefix string, yes bool) error {
 		}
 	}
 	if currentVersion := strings.TrimSpace(version); currentVersion != "" && currentVersion == tag {
-		fmt.Printf("Focus is already up to date (%s).\n", tag)
+		fmt.Printf("%s (%s).\n", colorSuccess("Focus is already up to date"), colorInfo(tag))
 		return nil
 	}
 
@@ -61,7 +61,7 @@ func Update(versionArg, prefix string, yes bool) error {
 	checksumName := fmt.Sprintf("checksums_%s.txt", tag)
 
 	if !yes {
-		fmt.Printf("Update focus to %s? [y/N]: ", tag)
+		fmt.Printf("%s %s? [y/N]: ", colorPrompt("Update focus to"), colorInfo(tag))
 		reader := bufio.NewReader(os.Stdin)
 		answer, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {

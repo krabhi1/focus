@@ -48,7 +48,7 @@ func main() {
 		return
 	case "config":
 		if err := runConfig(os.Args[2:], reloadDaemon); err != nil {
-			fmt.Println("Config failed:", err)
+			fmt.Println(colorError("Config failed:"), err)
 			return
 		}
 		return
@@ -58,10 +58,10 @@ func main() {
 		uninstallCmd.Parse(os.Args[2:])
 
 		if err := Uninstall(*prefix); err != nil {
-			fmt.Println("Uninstall failed:", err)
+			fmt.Println(colorError("Uninstall failed:"), err)
 			return
 		}
-		fmt.Println("Focus uninstalled.")
+		fmt.Println(colorSuccess("Focus uninstalled."))
 		return
 	case "update":
 		updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
@@ -71,15 +71,15 @@ func main() {
 		updateCmd.Parse(os.Args[2:])
 
 		if err := Update(*targetVersion, *prefix, *yes); err != nil {
-			fmt.Println("Update failed:", err)
+			fmt.Println(colorError("Update failed:"), err)
 			return
 		}
-		fmt.Println("Focus updated.")
+		fmt.Println(colorSuccess("Focus updated."))
 		return
 	case "start":
 		conn, err := connectDaemon()
 		if err != nil {
-			fmt.Println("Daemon not running.")
+			fmt.Println(colorError("Daemon not running."))
 			return
 		}
 		defer conn.Close()
@@ -89,19 +89,19 @@ func main() {
 			if errors.Is(err, flag.ErrHelp) {
 				return
 			}
-			fmt.Println("Error:", err)
+			fmt.Println(colorError("Error:"), err)
 			return
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
-			fmt.Println("Error sending request:", err)
+			fmt.Println(colorError("Error sending request:"), err)
 			return
 		}
 		printResponse(res)
 	case "cancel":
 		conn, err := connectDaemon()
 		if err != nil {
-			fmt.Println("Daemon not running.")
+			fmt.Println(colorError("Daemon not running."))
 			return
 		}
 		defer conn.Close()
@@ -111,14 +111,14 @@ func main() {
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
-			fmt.Println("Error sending request:", err)
+			fmt.Println(colorError("Error sending request:"), err)
 			return
 		}
 		printResponse(res)
 	case "history":
 		conn, err := connectDaemon()
 		if err != nil {
-			fmt.Println("Daemon not running.")
+			fmt.Println(colorError("Daemon not running."))
 			return
 		}
 		defer conn.Close()
@@ -128,14 +128,14 @@ func main() {
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
-			fmt.Println("Error sending request:", err)
+			fmt.Println(colorError("Error sending request:"), err)
 			return
 		}
 		printResponse(res)
 	case "reload":
 		conn, err := connectDaemon()
 		if err != nil {
-			fmt.Println("Daemon not running.")
+			fmt.Println(colorError("Daemon not running."))
 			return
 		}
 		defer conn.Close()
@@ -145,14 +145,14 @@ func main() {
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
-			fmt.Println("Error sending request:", err)
+			fmt.Println(colorError("Error sending request:"), err)
 			return
 		}
 		printResponse(res)
 	case "status":
 		conn, err := connectDaemon()
 		if err != nil {
-			fmt.Println("Daemon not running.")
+			fmt.Println(colorError("Daemon not running."))
 			return
 		}
 		defer conn.Close()
@@ -162,31 +162,31 @@ func main() {
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
-			fmt.Println("Error sending request:", err)
+			fmt.Println(colorError("Error sending request:"), err)
 			return
 		}
 		printResponse(res)
 	default:
-		fmt.Printf("Invalid command: %s\n\n", command)
+		fmt.Printf("%s %s\n\n", colorError("Invalid command:"), colorInfo(command))
 		printHelp()
 	}
 }
 
 func printHelp() {
-	fmt.Println("Focus CLI")
+	fmt.Println(colorTitle("Focus CLI"))
 	fmt.Println("")
-	fmt.Println("Usage:")
-	fmt.Println("  focus status")
-	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep> [--no-break]")
-	fmt.Println("  focus cancel")
-	fmt.Println("  focus history")
-	fmt.Println("  focus reload")
-	fmt.Println("  focus config <key> <value>")
-	fmt.Println("  focus doctor")
-	fmt.Println("  focus version")
-	fmt.Println("  focus update [--version <tag>] [--prefix <path>] [--yes]")
-	fmt.Println("  focus uninstall [--prefix <path>]")
-	fmt.Println("  focus help")
+	fmt.Println(colorHeading("Usage:"))
+	fmt.Println("  " + colorInfo("focus status"))
+	fmt.Println("  " + colorInfo("focus start --name <task> --duration <short|medium|long|deep> [--no-break]"))
+	fmt.Println("  " + colorInfo("focus cancel"))
+	fmt.Println("  " + colorInfo("focus history"))
+	fmt.Println("  " + colorInfo("focus reload"))
+	fmt.Println("  " + colorInfo("focus config <key> <value>"))
+	fmt.Println("  " + colorInfo("focus doctor"))
+	fmt.Println("  " + colorInfo("focus version"))
+	fmt.Println("  " + colorInfo("focus update [--version <tag>] [--prefix <path>] [--yes]"))
+	fmt.Println("  " + colorInfo("focus uninstall [--prefix <path>]"))
+	fmt.Println("  " + colorInfo("focus help"))
 }
 
 func buildStartRequest(args []string) (protocol.Request, error) {
@@ -228,13 +228,13 @@ func buildStartRequest(args []string) (protocol.Request, error) {
 }
 
 func printStartHelp() {
-	fmt.Println("Usage:")
-	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep> [--no-break]")
+	fmt.Println(colorHeading("Usage:"))
+	fmt.Println("  " + colorInfo("focus start --name <task> --duration <short|medium|long|deep> [--no-break]"))
 	fmt.Println("")
-	fmt.Println("Flags:")
-	fmt.Println("  --name       Task name")
-	fmt.Println("  --duration   Duration [short, medium, long, deep]")
-	fmt.Println("  --no-break   Skip the in-task break for this task")
+	fmt.Println(colorHeading("Flags:"))
+	fmt.Println("  " + colorLabel("--name") + "       Task name")
+	fmt.Println("  " + colorLabel("--duration") + "   Duration [short, medium, long, deep]")
+	fmt.Println("  " + colorLabel("--no-break") + "   Skip the in-task break for this task")
 }
 
 func connectDaemon() (net.Conn, error) {
@@ -257,10 +257,15 @@ func SendRequest(conn net.Conn, req protocol.Request) (protocol.Response, error)
 func printResponse(res protocol.Response) {
 	switch {
 	case res.Success != nil:
-		fmt.Println(res.Success.Message)
+		message := res.Success.Message
+		if strings.Contains(message, "\n") && strings.Contains(message, "completed | started ") {
+			fmt.Println(colorHistoryMessage(message))
+			return
+		}
+		fmt.Println(colorStatusMessage(message))
 	case res.Error != nil:
-		fmt.Println(res.Error.Message)
+		fmt.Println(colorError(res.Error.Message))
 	default:
-		fmt.Printf("%s: empty response\n", res.Type)
+		fmt.Printf("%s: %s\n", colorError(res.Type), colorMuted("empty response"))
 	}
 }

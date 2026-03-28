@@ -34,6 +34,8 @@ These paths are resolved at runtime.
 The daemon prints the resolved config, socket, and history paths on startup when trace mode is enabled.
 It also prints loaded today-history count and effective runtime durations in trace mode.
 
+The `focus` CLI colorizes output automatically in interactive terminals. Set `NO_COLOR=1` or redirect output to keep plain text.
+
 ## Configuration
 
 Focus reads JSON config. The file is split into sections so each part of the flow can be tuned separately.
