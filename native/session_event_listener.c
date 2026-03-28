@@ -166,6 +166,29 @@ static int on_lock_signal(sd_bus_message *message, void *userdata,
     return 0;
 }
 
+static int add_session_match(sd_bus *bus, const char *sender,
+                             const char *interface, const char *path,
+                             sd_bus_message_handler_t handler, AppState *app) {
+    char rule[256];
+    int r;
+
+    r = snprintf(rule, sizeof(rule),
+                 "type='signal',sender='%s',interface='%s',"
+                 "member='ActiveChanged',path='%s'",
+                 sender, interface, path);
+    if (r < 0 || (size_t)r >= sizeof(rule)) {
+        fprintf(stderr, "failed to build match rule for %s\n", sender);
+        return -1;
+    }
+
+    r = sd_bus_add_match(bus, NULL, rule, handler, app);
+    if (r < 0) {
+        fprintf(stderr, "failed to subscribe to %s ActiveChanged: %s\n", sender,
+                strerror(-r));
+    }
+    return r;
+}
+
 static int process_bus(sd_bus *bus) {
     int r;
 
@@ -214,15 +237,30 @@ static int connect_buses(AppState *app) {
         return r;
     }
 
-    r = sd_bus_add_match(
-        app->session_bus, NULL,
-        "type='signal',sender='org.cinnamon.ScreenSaver',"
-        "interface='org.cinnamon.ScreenSaver',member='ActiveChanged',"
-        "path='/org/cinnamon/ScreenSaver'",
-        on_lock_signal, app);
+    r = add_session_match(app->session_bus, "org.gnome.ScreenSaver",
+                          "org.gnome.ScreenSaver", "/org/gnome/ScreenSaver",
+                          on_lock_signal, app);
     if (r < 0) {
-        fprintf(stderr, "failed to subscribe to ActiveChanged: %s\n",
-                strerror(-r));
+        return r;
+    }
+
+    r = add_session_match(app->session_bus, "org.freedesktop.ScreenSaver",
+                          "org.freedesktop.ScreenSaver", "/ScreenSaver",
+                          on_lock_signal, app);
+    if (r < 0) {
+        r = add_session_match(app->session_bus, "org.freedesktop.ScreenSaver",
+                              "org.freedesktop.ScreenSaver",
+                              "/org/freedesktop/ScreenSaver", on_lock_signal,
+                              app);
+        if (r < 0) {
+            return r;
+        }
+    }
+
+    r = add_session_match(app->session_bus, "org.cinnamon.ScreenSaver",
+                          "org.cinnamon.ScreenSaver",
+                          "/org/cinnamon/ScreenSaver", on_lock_signal, app);
+    if (r < 0) {
         return r;
     }
 
