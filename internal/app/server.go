@@ -86,7 +86,7 @@ func (s *Server) handleStart(req protocol.StartRequest) protocol.Response {
 	if duration <= 0 {
 		return protocol.Response{Type: "error", Error: &protocol.ErrorResponse{Message: "missing task duration; provide a preset (short|medium|long|deep)"}}
 	}
-	task, err := s.runtime.StartTask(req.Title, duration)
+	task, err := s.runtime.StartTask(req.Title, duration, req.NoBreak)
 	if err != nil {
 		return protocol.Response{Type: "error", Error: &protocol.ErrorResponse{Message: err.Error()}}
 	}

@@ -108,7 +108,7 @@ func TestHistoryResponseShowsTodayTasks(t *testing.T) {
 	t.Cleanup(rt.Close)
 	srv := NewServer(rt, effects.NoopActions{}, nil)
 
-	if _, err := rt.StartTask("demo", 20*1e6); err != nil {
+	if _, err := rt.StartTask("demo", 20*1e6, false); err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
 	if _, err := rt.CancelCurrentTask(); err != nil {

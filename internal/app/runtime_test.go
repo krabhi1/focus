@@ -45,7 +45,7 @@ func TestRuntimeStartTaskAndCancel(t *testing.T) {
 	rt := NewRuntime(effects.NoopActions{})
 	t.Cleanup(rt.Close)
 
-	task, err := rt.StartTask("demo", cfg.TaskShort)
+	task, err := rt.StartTask("demo", cfg.TaskShort, false)
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
@@ -157,4 +157,86 @@ func TestRuntimeCompletionAlertStopsOnScreenUnlock(t *testing.T) {
 	if got := actions.Count(); got != beforeUnlock {
 		t.Fatalf("plays after screen unlock = %d, want %d", got, beforeUnlock)
 	}
+}
+
+func TestRuntimeStartTaskNoBreakSkipsBreakTimers(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 80 * time.Millisecond
+	cfg.TaskDeep = 120 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 20 * time.Millisecond
+	cfg.CooldownDeep = 30 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 20 * time.Millisecond
+	cfg.BreakDeepStart = 30 * time.Millisecond
+	cfg.BreakLongDuration = 10 * time.Millisecond
+	cfg.BreakDeepDuration = 10 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	task, err := rt.StartTask("demo", cfg.TaskLong, true)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if task == nil {
+		t.Fatal("task = nil, want task")
+	}
+
+	time.Sleep(35 * time.Millisecond)
+	if got := rt.Snapshot().Phase; got != "active" {
+		t.Fatalf("phase after break offset = %s, want active", got)
+	}
+}
+
+func TestRuntimeStartTaskSchedulesBreakTimersWhenEnabled(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 80 * time.Millisecond
+	cfg.TaskDeep = 120 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 20 * time.Millisecond
+	cfg.CooldownDeep = 30 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 20 * time.Millisecond
+	cfg.BreakDeepStart = 30 * time.Millisecond
+	cfg.BreakLongDuration = 10 * time.Millisecond
+	cfg.BreakDeepDuration = 10 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	task, err := rt.StartTask("demo", cfg.TaskLong, false)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if task == nil {
+		t.Fatal("task = nil, want task")
+	}
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if got := rt.Snapshot().Phase; got == "break" {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("phase = %s, want break", rt.Snapshot().Phase)
 }

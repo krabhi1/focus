@@ -246,15 +246,17 @@ Starts a new task.
 Example:
 
 ```bash
-focus start --name "write docs" --duration long
+focus start --name "write docs" --duration long --no-break
 ```
 
 Arguments:
 
 - `--name`: task title
 - `--duration`: one of `short`, `medium`, `long`, `deep`
+- `--no-break`: skip the in-task break for this task
 
 The client sends the preset name. The daemon resolves the actual duration from config.
+With `--no-break`, the task still completes and enters cooldown, but it does not schedule the in-task break.
 
 ### `focus cancel`
 
@@ -374,6 +376,7 @@ focus start --name "write docs" --duration long
 ```
 
 Use `short`, `medium`, `long`, or `deep` depending on how long you want the session to run.
+Add `--no-break` when you want the task to run straight through without the break phase.
 
 ### Check current state
 

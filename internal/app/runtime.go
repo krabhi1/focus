@@ -112,7 +112,7 @@ func (r *Runtime) HistoryCount() int {
 	return len(r.history)
 }
 
-func (r *Runtime) StartTask(title string, duration time.Duration) (*domain.Task, error) {
+func (r *Runtime) StartTask(title string, duration time.Duration, noBreak bool) (*domain.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -135,7 +135,7 @@ func (r *Runtime) StartTask(title string, duration time.Duration) (*domain.Task,
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTaskStarted, At: now, Task: task}).State
 	r.stopTaskTimersLocked()
 	r.stopNoTaskTimersLocked()
-	r.armTaskTimersLocked(task)
+	r.armTaskTimersLocked(task, noBreak)
 	r.tracef("task_started id=%d title=%q duration=%s", task.ID, task.Title, task.Duration)
 	return task, nil
 }
@@ -261,7 +261,7 @@ func (r *Runtime) OnScreenUnlocked() {
 	}
 }
 
-func (r *Runtime) armTaskTimersLocked(task *domain.Task) {
+func (r *Runtime) armTaskTimersLocked(task *domain.Task, noBreak bool) {
 	cfg := storage.GetRuntimeConfig()
 	expireAt := task.StartTime.Add(task.Duration)
 	remaining := r.clock.Until(expireAt)
@@ -272,6 +272,10 @@ func (r *Runtime) armTaskTimersLocked(task *domain.Task) {
 		r.completeCurrentTask(task.ID)
 	})
 	r.tracef("timer_set name=task_expire in=%s task_id=%d", remaining, task.ID)
+
+	if noBreak {
+		return
+	}
 
 	if plan, ok := breakPlanForDuration(task.Duration, cfg); ok {
 		warnAt := plan.startOffset - cfg.BreakWarning

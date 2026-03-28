@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/gob"
+	"errors"
 	"flag"
 	"fmt"
 	"focus/internal/protocol"
 	"focus/internal/storage"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -82,28 +84,13 @@ func main() {
 		}
 		defer conn.Close()
 
-		startCmd := flag.NewFlagSet("start", flag.ExitOnError)
-		name := startCmd.String("name", "", "Task name")
-
-		var durationArg DurationArg
-		startCmd.Var(&durationArg, "duration", "Duration [short, medium, long, deep]")
-		startCmd.Parse(os.Args[2:])
-		required := map[string]bool{"name": false, "duration": false}
-		startCmd.Visit(func(f *flag.Flag) {
-			required[f.Name] = true
-		})
-		for _, val := range required {
-			if !val {
-				startCmd.Usage()
+		req, err := buildStartRequest(os.Args[2:])
+		if err != nil {
+			if errors.Is(err, flag.ErrHelp) {
 				return
 			}
-		}
-		req := protocol.Request{
-			Command: "start",
-			Start: &protocol.StartRequest{
-				Title:  *name,
-				Preset: string(durationArg),
-			},
+			fmt.Println("Error:", err)
+			return
 		}
 		res, err := SendRequest(conn, req)
 		if err != nil {
@@ -190,7 +177,7 @@ func printHelp() {
 	fmt.Println("")
 	fmt.Println("Usage:")
 	fmt.Println("  focus status")
-	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep>")
+	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep> [--no-break]")
 	fmt.Println("  focus cancel")
 	fmt.Println("  focus history")
 	fmt.Println("  focus reload")
@@ -200,6 +187,54 @@ func printHelp() {
 	fmt.Println("  focus update [--version <tag>] [--prefix <path>] [--yes]")
 	fmt.Println("  focus uninstall [--prefix <path>]")
 	fmt.Println("  focus help")
+}
+
+func buildStartRequest(args []string) (protocol.Request, error) {
+	startCmd := flag.NewFlagSet("start", flag.ContinueOnError)
+	startCmd.SetOutput(io.Discard)
+	startCmd.Usage = func() {
+		printStartHelp()
+	}
+
+	name := startCmd.String("name", "", "Task name")
+	noBreak := startCmd.Bool("no-break", false, "Skip the in-task break for this task")
+
+	var durationArg DurationArg
+	startCmd.Var(&durationArg, "duration", "Duration [short, medium, long, deep]")
+	if err := startCmd.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			startCmd.Usage()
+		}
+		return protocol.Request{}, err
+	}
+	required := map[string]bool{"name": false, "duration": false}
+	startCmd.Visit(func(f *flag.Flag) {
+		required[f.Name] = true
+	})
+	for _, val := range required {
+		if !val {
+			printStartHelp()
+			return protocol.Request{}, flag.ErrHelp
+		}
+	}
+	return protocol.Request{
+		Command: "start",
+		Start: &protocol.StartRequest{
+			Title:   *name,
+			Preset:  string(durationArg),
+			NoBreak: *noBreak,
+		},
+	}, nil
+}
+
+func printStartHelp() {
+	fmt.Println("Usage:")
+	fmt.Println("  focus start --name <task> --duration <short|medium|long|deep> [--no-break]")
+	fmt.Println("")
+	fmt.Println("Flags:")
+	fmt.Println("  --name       Task name")
+	fmt.Println("  --duration   Duration [short, medium, long, deep]")
+	fmt.Println("  --no-break   Skip the in-task break for this task")
 }
 
 func connectDaemon() (net.Conn, error) {

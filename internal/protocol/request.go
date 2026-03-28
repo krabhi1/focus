@@ -11,4 +11,5 @@ type StartRequest struct {
 	Title    string
 	Duration time.Duration
 	Preset   string
+	NoBreak  bool
 }

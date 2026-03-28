@@ -58,6 +58,8 @@ In another terminal:
 FOCUS_SOCKET_PATH=/tmp/focus-dev.sock go run ./cmd/focus start --name demo --duration long
 ```
 
+Add `--no-break` if you want to verify the straight-through task path instead of the break flow.
+
 Expected flow:
 
 1. Break starts after about 5 seconds.
