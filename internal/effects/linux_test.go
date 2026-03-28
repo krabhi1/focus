@@ -34,6 +34,34 @@ func TestRealActionsLockScreenPrefersLoginctl(t *testing.T) {
 	}
 }
 
+func TestRealActionsLockScreenPrefersCinnamonDesktop(t *testing.T) {
+	restore := stubCommandEnv()
+	defer restore()
+
+	t.Setenv("XDG_CURRENT_DESKTOP", "Cinnamon")
+	t.Setenv("DESKTOP_SESSION", "cinnamon")
+	calls := []string{}
+	commandLookPath = func(name string) (string, error) {
+		if name != "cinnamon-screensaver-command" {
+			return "", errors.New("missing")
+		}
+		return "/usr/bin/cinnamon-screensaver-command", nil
+	}
+	commandRun = func(name string, args ...string) error {
+		calls = append(calls, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		return nil
+	}
+
+	RealActions{}.LockScreen()
+
+	if len(calls) != 1 {
+		t.Fatalf("calls = %v, want 1 cinnamon call", calls)
+	}
+	if got := calls[0]; got != "cinnamon-screensaver-command -l" {
+		t.Fatalf("call = %q, want cinnamon-screensaver-command -l", got)
+	}
+}
+
 func TestRealActionsLockScreenFallsBackToXdgScreensaver(t *testing.T) {
 	restore := stubCommandEnv()
 	defer restore()
@@ -101,6 +129,34 @@ func TestRealActionsUnlockScreenUsesLoginctlWhenAvailable(t *testing.T) {
 	}
 	if got := calls[0]; got != "loginctl unlock-session c1" {
 		t.Fatalf("call = %q, want loginctl unlock-session c1", got)
+	}
+}
+
+func TestRealActionsUnlockScreenPrefersCinnamonDesktop(t *testing.T) {
+	restore := stubCommandEnv()
+	defer restore()
+
+	t.Setenv("XDG_CURRENT_DESKTOP", "Cinnamon")
+	t.Setenv("DESKTOP_SESSION", "cinnamon")
+	calls := []string{}
+	commandLookPath = func(name string) (string, error) {
+		if name != "cinnamon-screensaver-command" {
+			return "", errors.New("missing")
+		}
+		return "/usr/bin/cinnamon-screensaver-command", nil
+	}
+	commandRun = func(name string, args ...string) error {
+		calls = append(calls, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		return nil
+	}
+
+	RealActions{}.UnlockScreen()
+
+	if len(calls) != 1 {
+		t.Fatalf("calls = %v, want 1 cinnamon call", calls)
+	}
+	if got := calls[0]; got != "cinnamon-screensaver-command -d" {
+		t.Fatalf("call = %q, want cinnamon-screensaver-command -d", got)
 	}
 }
 

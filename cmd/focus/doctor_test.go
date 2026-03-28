@@ -16,6 +16,8 @@ func TestDetectLockBackendPrefersLoginctlWithSession(t *testing.T) {
 
 	t.Setenv("PATH", dir)
 	t.Setenv("XDG_SESSION_ID", "session-123")
+	t.Setenv("XDG_CURRENT_DESKTOP", "")
+	t.Setenv("DESKTOP_SESSION", "")
 
 	if got := detectLockBackend(); got != "loginctl" {
 		t.Fatalf("detectLockBackend() = %q, want loginctl", got)
@@ -33,9 +35,30 @@ func TestDetectLockBackendFallsBackWithoutSession(t *testing.T) {
 
 	t.Setenv("PATH", dir)
 	t.Setenv("XDG_SESSION_ID", "")
+	t.Setenv("XDG_CURRENT_DESKTOP", "")
+	t.Setenv("DESKTOP_SESSION", "")
 
 	if got := detectLockBackend(); got != "xdg-screensaver" {
 		t.Fatalf("detectLockBackend() = %q, want xdg-screensaver", got)
+	}
+	if got := detectUnlockBackend(); got != "cinnamon-screensaver-command" {
+		t.Fatalf("detectUnlockBackend() = %q, want cinnamon-screensaver-command", got)
+	}
+}
+
+func TestDetectLockBackendPrefersCinnamonDesktop(t *testing.T) {
+	dir := t.TempDir()
+	fakeExecutable(t, dir, "cinnamon-screensaver-command")
+	fakeExecutable(t, dir, "loginctl")
+	fakeExecutable(t, dir, "xdg-screensaver")
+
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_CURRENT_DESKTOP", "Cinnamon")
+	t.Setenv("DESKTOP_SESSION", "cinnamon")
+	t.Setenv("XDG_SESSION_ID", "session-123")
+
+	if got := detectLockBackend(); got != "cinnamon-screensaver-command" {
+		t.Fatalf("detectLockBackend() = %q, want cinnamon-screensaver-command", got)
 	}
 	if got := detectUnlockBackend(); got != "cinnamon-screensaver-command" {
 		t.Fatalf("detectUnlockBackend() = %q, want cinnamon-screensaver-command", got)

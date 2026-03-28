@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"focus/internal/effects"
 	"focus/internal/protocol"
 	"focus/internal/storage"
 )
@@ -19,9 +20,10 @@ func runDoctor() {
 	printCommandCheck("focus-events", true)
 	printCommandCheck("notify-send", true)
 	printCommandCheck("systemctl", false)
-	printBackendCheck("lock.backend", detectLockBackend())
-	printBackendCheck("unlock.backend", detectUnlockBackend())
-	printBackendCheck("sound.backend", detectSoundBackend())
+	printBackendCheck("desktop", effects.DetectDesktopFlavor())
+	printBackendCheck("lock.backend", effects.DetectLockBackend())
+	printBackendCheck("unlock.backend", effects.DetectUnlockBackend())
+	printBackendCheck("sound.backend", effects.DetectSoundBackend())
 	fmt.Println(colorHeading("required:"), colorSuccess("focus-events, notify-send"))
 	fmt.Println(colorHeading("optional:"), colorMuted("lock/unlock and sound backends vary by desktop/session"))
 
@@ -77,47 +79,9 @@ func printBackendCheck(label, backend string) {
 	fmt.Printf("%s %s\n", colorInfo(label+":"), colorMuted(backend))
 }
 
-func detectLockBackend() string {
-	if sessionID := strings.TrimSpace(os.Getenv("XDG_SESSION_ID")); sessionID != "" {
-		if _, err := exec.LookPath("loginctl"); err == nil {
-			return "loginctl"
-		}
-	}
-	if _, err := exec.LookPath("xdg-screensaver"); err == nil {
-		return "xdg-screensaver"
-	}
-	if _, err := exec.LookPath("cinnamon-screensaver-command"); err == nil {
-		return "cinnamon-screensaver-command"
-	}
-	if _, err := exec.LookPath("gnome-screensaver-command"); err == nil {
-		return "gnome-screensaver-command"
-	}
-	return "missing"
-}
-
-func detectUnlockBackend() string {
-	if sessionID := strings.TrimSpace(os.Getenv("XDG_SESSION_ID")); sessionID != "" {
-		if _, err := exec.LookPath("loginctl"); err == nil {
-			return "loginctl"
-		}
-	}
-	if _, err := exec.LookPath("cinnamon-screensaver-command"); err == nil {
-		return "cinnamon-screensaver-command"
-	}
-	if _, err := exec.LookPath("gnome-screensaver-command"); err == nil {
-		return "gnome-screensaver-command"
-	}
-	return "missing"
-}
-
-func detectSoundBackend() string {
-	for _, name := range []string{"paplay", "pw-play", "aplay", "mpv", "ffplay", "cvlc", "mpg123"} {
-		if _, err := exec.LookPath(name); err == nil {
-			return name
-		}
-	}
-	return "missing"
-}
+func detectLockBackend() string   { return effects.DetectLockBackend() }
+func detectUnlockBackend() string { return effects.DetectUnlockBackend() }
+func detectSoundBackend() string  { return effects.DetectSoundBackend() }
 
 func printSystemdStatus() {
 	if _, err := exec.LookPath("systemctl"); err != nil {

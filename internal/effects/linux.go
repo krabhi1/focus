@@ -63,13 +63,57 @@ func (RealActions) UnlockScreen() {
 	tryCommands(unlockBackends())
 }
 
+func DetectDesktopFlavor() string {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("XDG_CURRENT_DESKTOP") + " " + os.Getenv("DESKTOP_SESSION")))
+	switch {
+	case strings.Contains(env, "cinnamon"):
+		return "cinnamon"
+	case strings.Contains(env, "gnome"):
+		return "gnome"
+	case strings.Contains(env, "kde"), strings.Contains(env, "plasma"):
+		return "kde"
+	default:
+		return "generic"
+	}
+}
+
+func DetectLockBackend() string {
+	for _, spec := range lockBackends() {
+		if _, err := commandLookPath(spec.name); err == nil {
+			return spec.name
+		}
+	}
+	return "missing"
+}
+
+func DetectUnlockBackend() string {
+	for _, spec := range unlockBackends() {
+		if _, err := commandLookPath(spec.name); err == nil {
+			return spec.name
+		}
+	}
+	return "missing"
+}
+
+func DetectSoundBackend() string {
+	for _, spec := range soundBackends("") {
+		if _, err := commandLookPath(spec.name); err == nil {
+			return spec.name
+		}
+	}
+	return "missing"
+}
+
 func lockBackends() []commandSpec {
 	var specs []commandSpec
+	switch DetectDesktopFlavor() {
+	case "cinnamon":
+		specs = append(specs, commandSpec{name: "cinnamon-screensaver-command", args: []string{"-l"}})
+	case "gnome":
+		specs = append(specs, commandSpec{name: "gnome-screensaver-command", args: []string{"-l"}})
+	}
 	if sessionID := sessionIDValue(); sessionID != "" {
-		specs = append(specs, commandSpec{
-			name: "loginctl",
-			args: []string{"lock-session", sessionID},
-		})
+		specs = append(specs, commandSpec{name: "loginctl", args: []string{"lock-session", sessionID}})
 	}
 	specs = append(specs,
 		commandSpec{name: "xdg-screensaver", args: []string{"lock"}},
@@ -81,11 +125,14 @@ func lockBackends() []commandSpec {
 
 func unlockBackends() []commandSpec {
 	var specs []commandSpec
+	switch DetectDesktopFlavor() {
+	case "cinnamon":
+		specs = append(specs, commandSpec{name: "cinnamon-screensaver-command", args: []string{"-d"}})
+	case "gnome":
+		specs = append(specs, commandSpec{name: "gnome-screensaver-command", args: []string{"-d"}})
+	}
 	if sessionID := sessionIDValue(); sessionID != "" {
-		specs = append(specs, commandSpec{
-			name: "loginctl",
-			args: []string{"unlock-session", sessionID},
-		})
+		specs = append(specs, commandSpec{name: "loginctl", args: []string{"unlock-session", sessionID}})
 	}
 	specs = append(specs,
 		commandSpec{name: "cinnamon-screensaver-command", args: []string{"-d"}},
