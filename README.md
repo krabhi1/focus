@@ -27,7 +27,7 @@ Current runtime model:
   - At break start, Focus locks the screen.
   - If the screen is unlocked during break or cooldown, Focus warns once and relocks after the configured `relock_delay`.
 - **Post-Task Cooldown:** Cooldown starts only after task completion (not during the in-task break).
-- **Automatic Tracking:** There is no need for manual toggling. Focus monitors your keyboard, mouse, and screen activity to automatically pause and resume tasks whenever you step away.
+- **Sleep/Wake Tracking:** Focus pauses active task timers when the machine sleeps and resumes them on wake.
 - **Heads-up Notifications:** You’ll receive a notification 5 minutes before a task ends, giving you time to wrap up your work gracefully.
 - **Status Visibility:** `focus status` shows cooldown state, active task remaining time, and break-specific details including relock countdown when applicable.
 
@@ -59,7 +59,7 @@ flowchart TB
 
 ## System Requirements
 
-For now this is only available in Linux and tested with cinnamon desktop environment. It should work in other environments as well, but I haven't tested it yet.
+For now this is only available in Linux. It depends on a systemd user session and the desktop tools below.
 
 Runtime dependencies used by `focusd`:
 

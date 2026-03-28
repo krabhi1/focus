@@ -42,10 +42,6 @@ func Reduce(prev State, ev Event) Result {
 		next.CooldownUntil = time.Time{}
 		next.BreakUntil = time.Time{}
 		actions = append(actions, Action{Type: ActionNotify, Title: "Task Complete", Message: "Task finished; cooldown pending."})
-	case EventIdleEntered:
-		next.IdleActive = true
-	case EventIdleExited:
-		next.IdleActive = false
 	case EventScreenLocked:
 		next.ScreenLocked = true
 	case EventScreenUnlock:

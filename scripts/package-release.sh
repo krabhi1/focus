@@ -88,7 +88,7 @@ for target in "${target_array[@]}"; do
   fi
 
   echo "Building focus-events for $goos/$goarch..."
-  native_flags="$(pkg-config --cflags --libs libsystemd x11 xscrnsaver)"
+  native_flags="$(pkg-config --cflags --libs libsystemd)"
   gcc -Wall -Wextra -O2 "$ROOT_DIR/native/session_event_listener.c" -o "$pkg_dir/focus-events" $native_flags
 
   cp -r "$ROOT_DIR/assets" "$pkg_dir/assets"

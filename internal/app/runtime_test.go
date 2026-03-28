@@ -164,7 +164,7 @@ func TestRuntimeLoadHistoryAndCount(t *testing.T) {
 	}
 }
 
-func TestRuntimeCompletionAlertRepeatsAndStopsOnIdleExit(t *testing.T) {
+func TestRuntimeCompletionAlertRepeatsWhileLockedAndStopsOnUnlock(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.CompletionAlertRepeatInterval = 10 * time.Millisecond
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
@@ -178,7 +178,6 @@ func TestRuntimeCompletionAlertRepeatsAndStopsOnIdleExit(t *testing.T) {
 	rt := NewRuntime(actions)
 	t.Cleanup(rt.Close)
 
-	rt.OnIdleEntered()
 	rt.startCompletionAlert()
 
 	waitForPlays := func(min int, timeout time.Duration) {
@@ -192,42 +191,17 @@ func TestRuntimeCompletionAlertRepeatsAndStopsOnIdleExit(t *testing.T) {
 		t.Fatalf("plays = %d, want at least %d", actions.Count(), min)
 	}
 
-	waitForPlays(2, 200*time.Millisecond)
-	beforeExit := actions.Count()
-
-	rt.OnIdleExited()
 	time.Sleep(40 * time.Millisecond)
-	if got := actions.Count(); got != beforeExit {
-		t.Fatalf("plays after idle exit = %d, want %d", got, beforeExit)
-	}
-}
-
-func TestRuntimeCompletionAlertStopsOnScreenUnlock(t *testing.T) {
-	cfg := storage.DefaultRuntimeConfig()
-	cfg.CompletionAlertRepeatInterval = 10 * time.Millisecond
-	if err := storage.SetRuntimeConfig(cfg); err != nil {
-		t.Fatalf("SetRuntimeConfig failed: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
-	})
-
-	actions := &soundRecorder{}
-	rt := NewRuntime(actions)
-	t.Cleanup(rt.Close)
-
-	rt.OnIdleEntered()
-	rt.startCompletionAlert()
-
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for actions.Count() < 2 && time.Now().Before(deadline) {
-		time.Sleep(2 * time.Millisecond)
-	}
-	if actions.Count() < 2 {
-		t.Fatalf("plays = %d, want at least 2", actions.Count())
+	if got := actions.Count(); got != 1 {
+		t.Fatalf("plays while unlocked = %d, want 1", got)
 	}
 
+	rt.SetSystemLocked(true)
+	rt.OnScreenLocked()
+	waitForPlays(2, 200*time.Millisecond)
 	beforeUnlock := actions.Count()
+
+	rt.SetSystemLocked(false)
 	rt.OnScreenUnlocked()
 	time.Sleep(40 * time.Millisecond)
 	if got := actions.Count(); got != beforeUnlock {

@@ -17,12 +17,12 @@ type Listener struct {
 	Errors <-chan error
 }
 
-func Start(ctx context.Context, idleThresholdSeconds, idlePollSeconds int) (*Listener, error) {
+func Start(ctx context.Context) (*Listener, error) {
 	helperPath, err := resolveHelperPath()
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, helperPath, "--format=binary", fmt.Sprintf("%d", idleThresholdSeconds), fmt.Sprintf("%d", idlePollSeconds))
+	cmd := exec.CommandContext(ctx, helperPath, "--format=binary")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open helper stdout: %w", err)

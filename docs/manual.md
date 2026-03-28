@@ -130,30 +130,18 @@ Important invariants:
 
 ### `idle`
 
-Daemon-side idle policy.
+Daemon-side no-task policy.
 
-- `idle.warn_after`: delay after `idle entered` before warning
-- `idle.lock_after`: delay after `idle entered` before locking
+- `idle.warn_after`: delay after no task is active before warning
+- `idle.lock_after`: delay after no task is active before locking
 
-The daemon now uses `focus-events` idle transitions, so this section is about what the daemon does after idle is detected.
-
-### `focus-events` defaults
-
-The helper idle detection values are hardcoded in the daemon defaults:
-
-- idle threshold: `10s`
-- idle poll: `5s`
-
-Use daemon flags if you want to override them temporarily:
-
-- `--events-idle-threshold <duration>`
-- `--events-idle-poll <duration>`
+These values control the wall-clock no-task timer. They are not tied to helper idle detection.
 
 ### `alert`
 
 Completion alert settings.
 
-- `alert.repeat_interval`: how often the completion sound repeats while the user is idle
+- `alert.repeat_interval`: how often the completion sound repeats while the screen is locked after task completion
 
 ## Config Validation
 
@@ -207,16 +195,12 @@ Common flags:
 - `--idle-warn-after <duration>`: override `idle.warn_after`
 - `--idle-lock-after <duration>`: override `idle.lock_after`
 - `--completion-alert-repeat-interval <duration>`: override `alert.repeat_interval`
-- `--events-idle-threshold <duration>`: override `focus-events` idle threshold
-- `--events-idle-poll <duration>`: override `focus-events` idle poll
 
 Precedence:
 
 1. CLI flag override
 2. JSON config file
 3. built-in defaults
-
-The `focus-events` idle values are not read from JSON config anymore.
 
 ## Client Commands
 
@@ -540,13 +524,13 @@ Check the config file and look for errors like:
 
 ### Missing helper binary
 
-If idle events do not appear, verify `focus-events` is installed and on `PATH`:
+If daemon events do not appear, verify `focus-events` is installed and on `PATH`:
 
 ```bash
 focus doctor
 ```
 
-The daemon depends on the helper to emit `idle entered` and `idle exited`.
+The daemon depends on the helper to emit `screen`, `sleep`, and `shutdown` events.
 
 ## Smoke-Test Workflow
 
@@ -577,7 +561,6 @@ That lets you verify:
 
 ## Notes
 
-- `focus-events` is the source of idle transitions.
 - `idle.warn_after` and `idle.lock_after` are daemon-side policy values.
-- `focus-events` idle threshold/poll are hardcoded daemon defaults and can be overridden with daemon flags.
+- `focus-events` emits `screen`, `sleep`, and `shutdown` events over the helper pipe.
 - The history log only stores completed tasks.

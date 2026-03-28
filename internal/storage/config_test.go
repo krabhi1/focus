@@ -64,12 +64,6 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	if cfg.CompletionAlertRepeatInterval != 7*time.Second {
 		t.Fatalf("CompletionAlertRepeatInterval = %s, want 7s", cfg.CompletionAlertRepeatInterval)
 	}
-	if cfg.EventsIdleThreshold != defaults.EventsIdleThreshold {
-		t.Fatalf("EventsIdleThreshold = %s, want default %s", cfg.EventsIdleThreshold, defaults.EventsIdleThreshold)
-	}
-	if cfg.EventsIdlePoll != defaults.EventsIdlePoll {
-		t.Fatalf("EventsIdlePoll = %s, want default %s", cfg.EventsIdlePoll, defaults.EventsIdlePoll)
-	}
 }
 
 func TestResolveRuntimeConfigRejectsBreakWindowOverflow(t *testing.T) {

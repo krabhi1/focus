@@ -6,7 +6,6 @@ type Kind string
 
 const (
 	KindListener Kind = "listener"
-	KindIdle     Kind = "idle"
 	KindScreen   Kind = "screen"
 	KindSleep    Kind = "sleep"
 	KindShutdown Kind = "shutdown"
@@ -22,10 +21,9 @@ const (
 
 const (
 	wireKindListener = 1
-	wireKindIdle     = 2
-	wireKindScreen   = 3
-	wireKindSleep    = 4
-	wireKindShutdown = 5
+	wireKindScreen   = 2
+	wireKindSleep    = 3
+	wireKindShutdown = 4
 )
 
 const (

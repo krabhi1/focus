@@ -10,8 +10,6 @@ const (
 	EventBreakStarted  EventType = "break_started"
 	EventBreakEnded    EventType = "break_ended"
 	EventTaskCompleted EventType = "task_completed"
-	EventIdleEntered   EventType = "idle_entered"
-	EventIdleExited    EventType = "idle_exited"
 	EventScreenLocked  EventType = "screen_locked"
 	EventScreenUnlock  EventType = "screen_unlocked"
 	EventTick          EventType = "tick"

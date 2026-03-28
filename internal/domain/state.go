@@ -21,7 +21,6 @@ type Task struct {
 
 type State struct {
 	Phase        Phase
-	IdleActive   bool
 	ScreenLocked bool
 
 	CurrentTask *Task

@@ -71,9 +71,6 @@ type runtimeFlagSet struct {
 	idleWarnAfter durationFlag
 	idleLockAfter durationFlag
 
-	eventsIdleThreshold durationFlag
-	eventsIdlePoll      durationFlag
-
 	alertRepeatInterval durationFlag
 }
 
@@ -103,8 +100,6 @@ func run() error {
 	flag.Var(&flags.cooldownStart, "cooldown-start-delay", "Override cooldown_start_delay")
 	flag.Var(&flags.idleWarnAfter, "idle-warn-after", "Override idle.warn_after")
 	flag.Var(&flags.idleLockAfter, "idle-lock-after", "Override idle.lock_after")
-	flag.Var(&flags.eventsIdleThreshold, "events-idle-threshold", "Override helper idle threshold")
-	flag.Var(&flags.eventsIdlePoll, "events-idle-poll", "Override helper idle poll")
 	flag.Var(&flags.alertRepeatInterval, "completion-alert-repeat-interval", "Override alert.repeat_interval")
 	flag.Parse()
 
@@ -141,7 +136,7 @@ func run() error {
 	if traceFlowEnabled() {
 		logRuntimeConfig(cfg)
 	}
-	listener, err := events.Start(ctx, int(cfg.EventsIdleThreshold/time.Second), int(cfg.EventsIdlePoll/time.Second))
+	listener, err := events.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("focus-events startup failed: %w", err)
 	}
@@ -238,12 +233,6 @@ func (f runtimeFlagSet) toOverrides() storage.Overrides {
 	if v, ok := f.idleLockAfter.Value(); ok {
 		overrides.IdleLockAfter = v
 	}
-	if v, ok := f.eventsIdleThreshold.Value(); ok {
-		overrides.EventsIdleThreshold = v
-	}
-	if v, ok := f.eventsIdlePoll.Value(); ok {
-		overrides.EventsIdlePoll = v
-	}
 	if v, ok := f.alertRepeatInterval.Value(); ok {
 		overrides.CompletionAlertRepeatInterval = v
 	}
@@ -303,13 +292,6 @@ func consumeHelperEvents(eventCh <-chan events.Event, runtime *app.Runtime) {
 			log.Printf("focus-events event=%s state=%s fields=%v", event.Kind, event.State, event.Fields)
 		}
 		switch event.Kind {
-		case events.KindIdle:
-			switch event.State {
-			case "entered":
-				runtime.OnIdleEntered()
-			case "exited":
-				runtime.OnIdleExited()
-			}
 		case events.KindSleep:
 			switch event.State {
 			case "prepare":
@@ -336,7 +318,7 @@ func traceFlowEnabled() bool {
 
 func logRuntimeConfig(cfg storage.RuntimeConfig) {
 	log.Printf(
-		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] events=[threshold:%s poll:%s] alert=[repeat:%s]",
+		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] alert=[repeat:%s]",
 		cfg.TaskShort,
 		cfg.TaskMedium,
 		cfg.TaskLong,
@@ -353,8 +335,6 @@ func logRuntimeConfig(cfg storage.RuntimeConfig) {
 		cfg.RelockDelay,
 		cfg.IdleWarnAfter,
 		cfg.IdleLockAfter,
-		cfg.EventsIdleThreshold,
-		cfg.EventsIdlePoll,
 		cfg.CompletionAlertRepeatInterval,
 	)
 }

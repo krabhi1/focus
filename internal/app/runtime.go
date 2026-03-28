@@ -26,7 +26,6 @@ type Runtime struct {
 	current *domain.Task
 	nextID  int
 
-	idleActive             bool
 	systemLocked           bool
 	noTaskSince            time.Time
 	noTaskWarned           bool
@@ -38,6 +37,7 @@ type Runtime struct {
 	taskPauseBreakStart    time.Duration
 	taskPauseHasBreakWarn  bool
 	taskPauseHasBreakStart bool
+	completionAlertActive  bool
 	completionAlertToken   uint64
 	deadlines              map[string]*scheduler.CallbackHandle
 }
@@ -157,6 +157,7 @@ func (r *Runtime) StartTask(title string, duration time.Duration, noBreak bool) 
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTaskStarted, At: now, Task: task}).State
 	r.stopTaskTimersLocked()
 	r.stopNoTaskTimersLocked()
+	r.stopCompletionAlertLocked()
 	r.armTaskTimersLocked(task, noBreak)
 	r.tracef("task_started id=%d title=%q duration=%s", task.ID, task.Title, task.Duration)
 	return task, nil
@@ -210,20 +211,6 @@ func (r *Runtime) SetSystemLocked(locked bool) {
 	r.mu.Unlock()
 }
 
-func (r *Runtime) OnIdleEntered() {
-	r.mu.Lock()
-	r.idleActive = true
-	r.mu.Unlock()
-}
-
-func (r *Runtime) OnIdleExited() {
-	r.mu.Lock()
-	r.idleActive = false
-	r.stopCompletionAlertLocked()
-	r.resumeNoTaskTrackingIfNeededLocked(r.clock.Now())
-	r.mu.Unlock()
-}
-
 func (r *Runtime) OnSleepPrepared() {
 	r.mu.Lock()
 	r.pauseCurrentTaskTimersLocked()
@@ -244,6 +231,7 @@ func (r *Runtime) OnScreenLocked() {
 	r.noTaskSince = time.Time{}
 	r.noTaskWarned = false
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventScreenLocked, At: r.clock.Now()}).State
+	r.resumeCompletionAlertIfNeededLocked()
 	r.mu.Unlock()
 }
 
@@ -485,28 +473,23 @@ func (r *Runtime) relockIfBreak() {
 
 func (r *Runtime) startCompletionAlert() {
 	r.mu.Lock()
-	if !r.idleActive {
-		r.mu.Unlock()
-		r.playSound("assets/task-ending.mp3")
-		return
-	}
-	if r.hasDeadlineLocked("completion_alert") {
-		r.mu.Unlock()
-		return
-	}
 	repeatInterval := storage.GetRuntimeConfig().CompletionAlertRepeatInterval
+	r.completionAlertActive = true
 	r.completionAlertToken++
 	token := r.completionAlertToken
+	locked := r.systemLocked
 	r.mu.Unlock()
 
 	r.playSound("assets/task-ending.mp3")
 
 	r.mu.Lock()
-	if token != r.completionAlertToken || !r.idleActive {
+	if token != r.completionAlertToken || !r.completionAlertActive {
 		r.mu.Unlock()
 		return
 	}
-	r.scheduleCompletionAlertTickLocked(token, repeatInterval)
+	if locked {
+		r.scheduleCompletionAlertTickLocked(token, repeatInterval)
+	}
 	r.mu.Unlock()
 }
 
@@ -520,7 +503,7 @@ func (r *Runtime) scheduleCompletionAlertTickLocked(token uint64, repeatInterval
 
 func (r *Runtime) runCompletionAlertTick(token uint64) {
 	r.mu.Lock()
-	if token != r.completionAlertToken || !r.idleActive {
+	if token != r.completionAlertToken || !r.completionAlertActive || !r.systemLocked {
 		if token == r.completionAlertToken {
 			r.cancelDeadlineLocked("completion_alert")
 		}
@@ -534,11 +517,13 @@ func (r *Runtime) runCompletionAlertTick(token uint64) {
 	r.playSound("assets/task-ending.mp3")
 
 	r.mu.Lock()
-	if token != r.completionAlertToken || !r.idleActive {
+	if token != r.completionAlertToken || !r.completionAlertActive {
 		r.mu.Unlock()
 		return
 	}
-	r.scheduleCompletionAlertTickLocked(token, repeatInterval)
+	if r.systemLocked {
+		r.scheduleCompletionAlertTickLocked(token, repeatInterval)
+	}
 	r.mu.Unlock()
 }
 
@@ -630,7 +615,15 @@ func (r *Runtime) stopAllTimersLocked() {
 
 func (r *Runtime) stopCompletionAlertLocked() {
 	r.cancelDeadlineLocked("completion_alert")
+	r.completionAlertActive = false
 	r.completionAlertToken++
+}
+
+func (r *Runtime) resumeCompletionAlertIfNeededLocked() {
+	if !r.completionAlertActive || !r.systemLocked || r.hasDeadlineLocked("completion_alert") {
+		return
+	}
+	r.scheduleCompletionAlertTickLocked(r.completionAlertToken, storage.GetRuntimeConfig().CompletionAlertRepeatInterval)
 }
 
 func (r *Runtime) scheduleDeadlineLocked(name string, at time.Time, fn func()) {

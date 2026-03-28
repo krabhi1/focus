@@ -64,7 +64,7 @@ func TestReduceBreakExpiryReturnsToActive(t *testing.T) {
 	}
 }
 
-func TestReduceLockAndIdleFlags(t *testing.T) {
+func TestReduceLockFlags(t *testing.T) {
 	s := InitialState()
 	res := Reduce(s, Event{Type: EventScreenLocked, At: time.Now()})
 	if !res.State.ScreenLocked {
@@ -74,15 +74,5 @@ func TestReduceLockAndIdleFlags(t *testing.T) {
 	res = Reduce(res.State, Event{Type: EventScreenUnlock, At: time.Now()})
 	if res.State.ScreenLocked {
 		t.Fatal("screen locked flag should be false")
-	}
-
-	res = Reduce(res.State, Event{Type: EventIdleEntered, At: time.Now()})
-	if !res.State.IdleActive {
-		t.Fatal("idle flag should be true")
-	}
-
-	res = Reduce(res.State, Event{Type: EventIdleExited, At: time.Now()})
-	if res.State.IdleActive {
-		t.Fatal("idle flag should be false")
 	}
 }

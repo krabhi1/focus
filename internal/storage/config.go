@@ -68,12 +68,8 @@ type Overrides struct {
 	BreakDeepDuration  *time.Duration
 	RelockDelay        *time.Duration
 	CooldownStartDelay *time.Duration
-
-	IdleWarnAfter *time.Duration
-	IdleLockAfter *time.Duration
-
-	EventsIdleThreshold *time.Duration
-	EventsIdlePoll      *time.Duration
+	IdleWarnAfter      *time.Duration
+	IdleLockAfter      *time.Duration
 
 	CompletionAlertRepeatInterval *time.Duration
 }
@@ -98,8 +94,6 @@ type RuntimeConfig struct {
 
 	IdleWarnAfter                 time.Duration
 	IdleLockAfter                 time.Duration
-	EventsIdleThreshold           time.Duration
-	EventsIdlePoll                time.Duration
 	CompletionAlertRepeatInterval time.Duration
 }
 
@@ -151,8 +145,6 @@ func DefaultRuntimeConfig() RuntimeConfig {
 
 		IdleWarnAfter:                 IdleWarningAfter,
 		IdleLockAfter:                 IdleLockAfter,
-		EventsIdleThreshold:           10 * time.Second,
-		EventsIdlePoll:                5 * time.Second,
 		CompletionAlertRepeatInterval: 5 * time.Second,
 	}
 }
@@ -193,8 +185,6 @@ func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 		{"cooldown_start_delay", cfg.CooldownStartDelay},
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
-		{"events.idle_threshold", cfg.EventsIdleThreshold},
-		{"events.idle_poll", cfg.EventsIdlePoll},
 		{"alert.repeat_interval", cfg.CompletionAlertRepeatInterval},
 	}
 	for _, item := range positive {
@@ -462,8 +452,6 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	applyOverride(&resolved.CooldownStartDelay, overrides.CooldownStartDelay)
 	applyOverride(&resolved.IdleWarnAfter, overrides.IdleWarnAfter)
 	applyOverride(&resolved.IdleLockAfter, overrides.IdleLockAfter)
-	applyOverride(&resolved.EventsIdleThreshold, overrides.EventsIdleThreshold)
-	applyOverride(&resolved.EventsIdlePoll, overrides.EventsIdlePoll)
 	applyOverride(&resolved.CompletionAlertRepeatInterval, overrides.CompletionAlertRepeatInterval)
 	return resolved, nil
 }

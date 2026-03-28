@@ -3,7 +3,6 @@ package events
 import (
 	"encoding/binary"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -35,12 +34,6 @@ func ParseBinaryFrame(frame []byte) (Event, error) {
 	if state != "" {
 		fields["state"] = state
 	}
-	idleThreshold := binary.LittleEndian.Uint32(frame[16:20])
-	idlePoll := binary.LittleEndian.Uint32(frame[20:24])
-	if kind == KindListener {
-		fields["idle_threshold"] = strconv.FormatUint(uint64(idleThreshold), 10)
-		fields["idle_poll"] = strconv.FormatUint(uint64(idlePoll), 10)
-	}
 	return Event{Timestamp: ts, Kind: kind, State: state, Fields: fields}, nil
 }
 
@@ -48,8 +41,6 @@ func parseWireKind(raw byte) (Kind, error) {
 	switch raw {
 	case wireKindListener:
 		return KindListener, nil
-	case wireKindIdle:
-		return KindIdle, nil
 	case wireKindScreen:
 		return KindScreen, nil
 	case wireKindSleep:
