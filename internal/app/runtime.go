@@ -26,13 +26,20 @@ type Runtime struct {
 	current *domain.Task
 	nextID  int
 
-	idleActive           bool
-	systemLocked         bool
-	noTaskSince          time.Time
-	noTaskWarned         bool
-	relockUntil          time.Time
-	completionAlertToken uint64
-	deadlines            map[string]*scheduler.CallbackHandle
+	idleActive             bool
+	systemLocked           bool
+	noTaskSince            time.Time
+	noTaskWarned           bool
+	relockUntil            time.Time
+	taskPaused             bool
+	taskPauseTaskID        int
+	taskPauseExpireLeft    time.Duration
+	taskPauseBreakWarn     time.Duration
+	taskPauseBreakStart    time.Duration
+	taskPauseHasBreakWarn  bool
+	taskPauseHasBreakStart bool
+	completionAlertToken   uint64
+	deadlines              map[string]*scheduler.CallbackHandle
 }
 
 func NewRuntime(actions effects.Actions) *Runtime {
@@ -56,6 +63,20 @@ func NewRuntime(actions effects.Actions) *Runtime {
 
 func (r *Runtime) SetTraceForTest(enabled bool) {
 	r.trace = enabled
+}
+
+func (r *Runtime) SetClockForTest(clock runtimeClock) {
+	if clock == nil {
+		return
+	}
+	r.mu.Lock()
+	oldTimers := r.timers
+	r.clock = clock
+	r.timers = scheduler.NewCallbackLoop(schedulerClockAdapter{clock: clock})
+	r.mu.Unlock()
+	if oldTimers != nil {
+		oldTimers.Stop()
+	}
 }
 
 func (r *Runtime) Close() {
@@ -131,6 +152,7 @@ func (r *Runtime) StartTask(title string, duration time.Duration, noBreak bool) 
 	r.current = task
 	r.history = append(r.history, *task)
 	r.pruneHistoryToTodayLocked(now)
+	r.clearPausedTaskLocked()
 
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTaskStarted, At: now, Task: task}).State
 	r.stopTaskTimersLocked()
@@ -153,6 +175,8 @@ func (r *Runtime) CancelCurrentTask() (*domain.Task, error) {
 
 	task := r.current
 	r.current = nil
+	r.clearPausedTaskLocked()
+	r.removeTaskFromHistoryLocked(task.ID)
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTaskCancelled, At: r.clock.Now()}).State
 	r.stopTaskTimersLocked()
 	r.stopNoTaskTimersLocked()
@@ -197,6 +221,18 @@ func (r *Runtime) OnIdleExited() {
 	r.idleActive = false
 	r.stopCompletionAlertLocked()
 	r.resumeNoTaskTrackingIfNeededLocked(r.clock.Now())
+	r.mu.Unlock()
+}
+
+func (r *Runtime) OnSleepPrepared() {
+	r.mu.Lock()
+	r.pauseCurrentTaskTimersLocked()
+	r.mu.Unlock()
+}
+
+func (r *Runtime) OnSleepResumed() {
+	r.mu.Lock()
+	r.resumePausedTaskTimersLocked()
 	r.mu.Unlock()
 }
 
@@ -259,6 +295,68 @@ func (r *Runtime) OnScreenUnlocked() {
 	if notifyUser {
 		r.notify("Break Active", fmt.Sprintf("Break is active. Locking again in %s.", relockDelay.Round(time.Second)))
 	}
+}
+
+func (r *Runtime) pauseCurrentTaskTimersLocked() {
+	if r.current == nil || r.taskPaused || r.state.Phase != domain.PhaseActive {
+		return
+	}
+	now := r.clock.Now()
+	task := r.current
+	cfg := storage.GetRuntimeConfig()
+
+	r.taskPaused = true
+	r.taskPauseTaskID = task.ID
+	r.taskPauseExpireLeft = remainingUntil(task.StartTime.Add(task.Duration), now)
+	r.taskPauseHasBreakWarn = false
+	r.taskPauseHasBreakStart = false
+	r.taskPauseBreakWarn = 0
+	r.taskPauseBreakStart = 0
+
+	if plan, ok := breakPlanForDuration(task.Duration, cfg); ok {
+		if r.hasDeadlineLocked("break_warn") {
+			r.taskPauseHasBreakWarn = true
+			r.taskPauseBreakWarn = remainingUntil(task.StartTime.Add(plan.startOffset-cfg.BreakWarning), now)
+		}
+		if r.hasDeadlineLocked("break_start") {
+			r.taskPauseHasBreakStart = true
+			r.taskPauseBreakStart = remainingUntil(task.StartTime.Add(plan.startOffset), now)
+		}
+	}
+
+	r.cancelDeadlineLocked("task_expire")
+	r.cancelDeadlineLocked("break_warn")
+	r.cancelDeadlineLocked("break_start")
+	r.tracef("task_paused id=%d title=%q", task.ID, task.Title)
+}
+
+func (r *Runtime) resumePausedTaskTimersLocked() {
+	if r.current == nil || !r.taskPaused || r.state.Phase != domain.PhaseActive || r.current.ID != r.taskPauseTaskID {
+		return
+	}
+	now := r.clock.Now()
+	task := r.current
+
+	if r.taskPauseExpireLeft > 0 {
+		r.scheduleDeadlineLocked("task_expire", now.Add(r.taskPauseExpireLeft), func() {
+			r.completeCurrentTask(task.ID)
+		})
+	}
+	if r.taskPauseHasBreakWarn && r.taskPauseBreakWarn > 0 {
+		r.scheduleDeadlineLocked("break_warn", now.Add(r.taskPauseBreakWarn), func() {
+			r.notifyBreakComing(task.ID)
+		})
+	}
+	if r.taskPauseHasBreakStart && r.taskPauseBreakStart > 0 {
+		cfg := storage.GetRuntimeConfig()
+		breakDuration := breakDurationForTask(task.Duration, cfg)
+		r.scheduleDeadlineLocked("break_start", now.Add(r.taskPauseBreakStart), func() {
+			r.startBreak(task.ID, breakDuration)
+		})
+	}
+
+	r.clearPausedTaskLocked()
+	r.tracef("task_resumed id=%d title=%q", task.ID, task.Title)
 }
 
 func (r *Runtime) armTaskTimersLocked(task *domain.Task, noBreak bool) {
@@ -634,6 +732,25 @@ func cooldownDurationFor(duration time.Duration, cfg storage.RuntimeConfig) time
 	}
 }
 
+func breakDurationForTask(duration time.Duration, cfg storage.RuntimeConfig) time.Duration {
+	switch {
+	case duration >= cfg.TaskDeep:
+		return cfg.BreakDeepDuration
+	case duration >= cfg.TaskLong:
+		return cfg.BreakLongDuration
+	default:
+		return 0
+	}
+}
+
+func remainingUntil(at, now time.Time) time.Duration {
+	remaining := at.Sub(now)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
 func (r *Runtime) pruneHistoryToTodayLocked(now time.Time) {
 	if len(r.history) == 0 {
 		return
@@ -648,6 +765,30 @@ func (r *Runtime) pruneHistoryToTodayLocked(now time.Time) {
 		filtered = append(filtered, task)
 	}
 	r.history = filtered
+}
+
+func (r *Runtime) removeTaskFromHistoryLocked(taskID int) {
+	if len(r.history) == 0 {
+		return
+	}
+	filtered := r.history[:0]
+	for _, task := range r.history {
+		if task.ID == taskID {
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	r.history = filtered
+}
+
+func (r *Runtime) clearPausedTaskLocked() {
+	r.taskPaused = false
+	r.taskPauseTaskID = 0
+	r.taskPauseExpireLeft = 0
+	r.taskPauseBreakWarn = 0
+	r.taskPauseBreakStart = 0
+	r.taskPauseHasBreakWarn = false
+	r.taskPauseHasBreakStart = false
 }
 
 func startOfToday(t time.Time) time.Time {

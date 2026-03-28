@@ -310,6 +310,13 @@ func consumeHelperEvents(eventCh <-chan events.Event, runtime *app.Runtime) {
 			case "exited":
 				runtime.OnIdleExited()
 			}
+		case events.KindSleep:
+			switch event.State {
+			case "prepare":
+				runtime.OnSleepPrepared()
+			case "resume":
+				runtime.OnSleepResumed()
+			}
 		case events.KindScreen:
 			switch event.State {
 			case "locked":

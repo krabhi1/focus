@@ -6,6 +6,7 @@ import (
 	"focus/internal/app"
 	"focus/internal/effects"
 	"focus/internal/events"
+	"focus/internal/storage"
 	"log"
 	"strings"
 	"testing"
@@ -157,6 +158,66 @@ func TestConsumeHelperEventsTraceLoggingEnabled(t *testing.T) {
 	if got := buf.String(); !strings.Contains(got, "focus-events event=screen state=locked") {
 		t.Fatalf("log output = %q, want focus-events trace log", got)
 	}
+}
+
+func TestConsumeHelperEventsSleepsPauseAndResumeTaskTimers(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 120 * time.Millisecond
+	cfg.TaskDeep = 160 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 20 * time.Millisecond
+	cfg.CooldownDeep = 30 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 40 * time.Millisecond
+	cfg.BreakDeepStart = 60 * time.Millisecond
+	cfg.BreakLongDuration = 20 * time.Millisecond
+	cfg.BreakDeepDuration = 20 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := appForTest(t)
+	task, err := rt.StartTask("demo", cfg.TaskLong, false)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if task == nil {
+		t.Fatal("task = nil, want task")
+	}
+
+	eventCh := make(chan events.Event, 4)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		consumeHelperEvents(eventCh, rt)
+	}()
+
+	eventCh <- events.Event{Kind: events.KindSleep, State: "prepare"}
+	time.Sleep(80 * time.Millisecond)
+	if got := rt.Snapshot().Phase; got != "active" {
+		t.Fatalf("phase while sleep-paused = %s, want active", got)
+	}
+
+	eventCh <- events.Event{Kind: events.KindSleep, State: "resume"}
+	close(eventCh)
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if got := rt.Snapshot().Phase; got == "break" {
+			<-done
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	<-done
+	t.Fatalf("phase after sleep resume = %s, want break", rt.Snapshot().Phase)
 }
 
 func appForTest(t *testing.T) *app.Runtime {
