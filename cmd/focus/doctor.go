@@ -18,21 +18,10 @@ func runDoctor() {
 	printCommandCheck("focusd", true)
 	printCommandCheck("focus-events", true)
 	printCommandCheck("notify-send", true)
-	printCommandCheck("loginctl", false)
-	printCommandCheck("xdg-screensaver", false)
-	printCommandCheck("cinnamon-screensaver-command", false)
-	printCommandCheck("gnome-screensaver-command", false)
-	printCommandCheck("paplay", false)
-	printCommandCheck("pw-play", false)
-	printCommandCheck("aplay", false)
-	printCommandCheck("mpv", false)
-	printCommandCheck("ffplay", false)
-	printCommandCheck("cvlc", false)
-	printCommandCheck("mpg123", false)
 	printCommandCheck("systemctl", false)
-	fmt.Printf("lock.backend: %s\n", detectLockBackend())
-	fmt.Printf("unlock.backend: %s\n", detectUnlockBackend())
-	fmt.Printf("sound.backend: %s\n", detectSoundBackend())
+	printBackendCheck("lock.backend", detectLockBackend())
+	printBackendCheck("unlock.backend", detectUnlockBackend())
+	printBackendCheck("sound.backend", detectSoundBackend())
 	fmt.Println("required: focus-events, notify-send")
 	fmt.Println("optional: lock/unlock and sound backends vary by desktop/session")
 
@@ -74,6 +63,18 @@ func printCommandCheck(name string, required bool) {
 	} else {
 		fmt.Printf("dep.%s: missing (optional)\n", name)
 	}
+}
+
+func printBackendCheck(label, backend string) {
+	if backend == "missing" {
+		fmt.Printf("%s: missing\n", label)
+		return
+	}
+	if path, err := exec.LookPath(backend); err == nil {
+		fmt.Printf("%s: %s (%s)\n", label, backend, path)
+		return
+	}
+	fmt.Printf("%s: %s\n", label, backend)
 }
 
 func detectLockBackend() string {
