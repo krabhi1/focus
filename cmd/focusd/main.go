@@ -266,33 +266,28 @@ func resolveConfigPath(path string) (string, error) {
 }
 
 func warnMissingRuntimeDependencies(lookPath func(string) (string, error)) {
-	deps := []struct {
-		name     string
-		required bool
-	}{
-		{name: "loginctl", required: false},
-		{name: "xdg-screensaver", required: false},
-		{name: "cinnamon-screensaver-command", required: false},
-		{name: "gnome-screensaver-command", required: false},
-		{name: "notify-send", required: true},
-		{name: "paplay", required: false},
-		{name: "pw-play", required: false},
-		{name: "aplay", required: false},
-		{name: "mpv", required: false},
-		{name: "ffplay", required: false},
-		{name: "cvlc", required: false},
-		{name: "mpg123", required: false},
-	}
-	for _, dep := range deps {
-		if _, err := lookPath(dep.name); err == nil {
-			continue
-		}
-		if dep.required {
-			log.Printf("warning: missing dependency '%s' (required)", dep.name)
-		} else {
-			log.Printf("warning: missing dependency '%s' (optional)", dep.name)
+	required := []string{"notify-send"}
+	for _, dep := range required {
+		if _, err := lookPath(dep); err != nil {
+			log.Printf("warning: missing dependency '%s' (required)", dep)
 		}
 	}
+
+	if backend := firstAvailableDependency(lookPath, []string{"loginctl", "xdg-screensaver", "cinnamon-screensaver-command", "gnome-screensaver-command"}); backend == "" {
+		log.Printf("warning: missing dependency 'screen lock/unlock backend' (optional)")
+	}
+	if backend := firstAvailableDependency(lookPath, []string{"paplay", "pw-play", "aplay", "mpv", "ffplay", "cvlc", "mpg123"}); backend == "" {
+		log.Printf("warning: missing dependency 'sound backend' (optional)")
+	}
+}
+
+func firstAvailableDependency(lookPath func(string) (string, error), names []string) string {
+	for _, name := range names {
+		if _, err := lookPath(name); err == nil {
+			return name
+		}
+	}
+	return ""
 }
 
 func consumeHelperEvents(eventCh <-chan events.Event, runtime *app.Runtime) {

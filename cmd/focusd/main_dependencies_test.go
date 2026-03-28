@@ -35,6 +35,45 @@ func TestWarnMissingRuntimeDependencies(t *testing.T) {
 
 	warnMissingRuntimeDependencies(lookPath)
 
+	if len(calls) != 3 {
+		t.Fatalf("lookPath calls = %d, want 3", len(calls))
+	}
+	got := buf.String()
+	if !strings.Contains(got, "missing dependency 'notify-send'") {
+		t.Fatalf("log output = %q, want missing notify-send warning", got)
+	}
+	if strings.Contains(got, "screen lock/unlock backend") {
+		t.Fatalf("log output = %q, did not expect warning for screen backend", got)
+	}
+	if strings.Contains(got, "sound backend") {
+		t.Fatalf("log output = %q, did not expect warning for sound backend", got)
+	}
+}
+
+func TestWarnMissingRuntimeDependenciesWarnsOncePerBackendGroup(t *testing.T) {
+	var calls []string
+	lookPath := func(name string) (string, error) {
+		calls = append(calls, name)
+		switch name {
+		case "notify-send", "loginctl", "xdg-screensaver", "cinnamon-screensaver-command", "gnome-screensaver-command", "paplay", "pw-play", "aplay", "mpv", "ffplay", "cvlc", "mpg123":
+			return "", errors.New("not found")
+		default:
+			return "/usr/bin/" + name, nil
+		}
+	}
+
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	}()
+
+	warnMissingRuntimeDependencies(lookPath)
+
 	if len(calls) != 12 {
 		t.Fatalf("lookPath calls = %d, want 12", len(calls))
 	}
@@ -42,20 +81,11 @@ func TestWarnMissingRuntimeDependencies(t *testing.T) {
 	if !strings.Contains(got, "missing dependency 'notify-send'") {
 		t.Fatalf("log output = %q, want missing notify-send warning", got)
 	}
-	if strings.Contains(got, "loginctl") {
-		t.Fatalf("log output = %q, did not expect warning for loginctl", got)
+	if !strings.Contains(got, "missing dependency 'screen lock/unlock backend'") {
+		t.Fatalf("log output = %q, want missing screen backend warning", got)
 	}
-	if strings.Contains(got, "xdg-screensaver") {
-		t.Fatalf("log output = %q, did not expect warning for xdg-screensaver", got)
-	}
-	if strings.Contains(got, "cinnamon-screensaver-command") {
-		t.Fatalf("log output = %q, did not expect warning for cinnamon-screensaver-command", got)
-	}
-	if strings.Contains(got, "gnome-screensaver-command") {
-		t.Fatalf("log output = %q, did not expect warning for gnome-screensaver-command", got)
-	}
-	if strings.Contains(got, "paplay") {
-		t.Fatalf("log output = %q, did not expect warning for paplay", got)
+	if !strings.Contains(got, "missing dependency 'sound backend'") {
+		t.Fatalf("log output = %q, want missing sound backend warning", got)
 	}
 }
 
