@@ -199,6 +199,48 @@ func TestConsumeHelperEventsTraceLoggingEnabled(t *testing.T) {
 	}
 }
 
+func TestConsumeHelperEventsAcceptsScreenStateAliases(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 120 * time.Millisecond
+	cfg.TaskDeep = 160 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 20 * time.Millisecond
+	cfg.CooldownDeep = 30 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 40 * time.Millisecond
+	cfg.BreakDeepStart = 60 * time.Millisecond
+	cfg.BreakLongDuration = 20 * time.Millisecond
+	cfg.BreakDeepDuration = 20 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := appForTest(t)
+	eventCh := make(chan events.Event, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		consumeHelperEvents(eventCh, rt)
+	}()
+
+	eventCh <- events.Event{Kind: events.KindScreen, State: "entered"}
+	eventCh <- events.Event{Kind: events.KindScreen, State: "exited"}
+	close(eventCh)
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for helper event consumer")
+	}
+}
+
 func TestConsumeHelperEventsSleepsPauseAndResumeTaskTimers(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.TaskShort = 20 * time.Millisecond

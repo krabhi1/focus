@@ -305,10 +305,10 @@ func consumeHelperEvents(eventCh <-chan events.Event, runtime *app.Runtime) {
 			}
 		case events.KindScreen:
 			switch event.State {
-			case "locked":
+			case "locked", "entered":
 				runtime.SetSystemLocked(true)
 				runtime.OnScreenLocked()
-			case "unlocked":
+			case "unlocked", "exited":
 				runtime.SetSystemLocked(false)
 				runtime.OnScreenUnlocked()
 			}
