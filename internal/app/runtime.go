@@ -395,13 +395,7 @@ func (r *Runtime) completeCurrentTask(taskID int) {
 	cooldownStartAt := now.Add(cfg.CooldownStartDelay)
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTaskCompleted, At: now, CooldownStartAt: cooldownStartAt, CooldownDuration: cooldownDuration}).State
 	r.scheduleDeadlineLocked("cooldown_start", cooldownStartAt, func() {
-		r.lockScreen()
-	})
-	r.scheduleDeadlineLocked("cooldown_end", cooldownStartAt.Add(cooldownDuration), func() {
-		r.startCompletionAlert()
-		r.mu.Lock()
-		r.resumeNoTaskTrackingAfterCooldownLocked(r.clock.Now())
-		r.mu.Unlock()
+		r.beginCooldown()
 	})
 	r.mu.Unlock()
 
@@ -409,6 +403,36 @@ func (r *Runtime) completeCurrentTask(taskID int) {
 		fmt.Printf("failed to persist completed task: %v\n", err)
 	}
 	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in %s", task.Title, cfg.CooldownStartDelay.Round(time.Second)))
+}
+
+func (r *Runtime) beginCooldown() {
+	r.mu.Lock()
+	if r.state.Phase != domain.PhasePendingCooldown {
+		r.mu.Unlock()
+		return
+	}
+	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTick, At: r.clock.Now()}).State
+	cooldownEndAt := r.state.CooldownUntil
+	r.scheduleDeadlineLocked("cooldown_end", cooldownEndAt, func() {
+		r.finishCooldown()
+	})
+	r.mu.Unlock()
+	r.lockScreen()
+}
+
+func (r *Runtime) finishCooldown() {
+	r.mu.Lock()
+	if r.state.Phase != domain.PhaseCooldown {
+		r.mu.Unlock()
+		return
+	}
+	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTick, At: r.clock.Now()}).State
+	r.mu.Unlock()
+
+	r.startCompletionAlert()
+	r.mu.Lock()
+	r.resumeNoTaskTrackingAfterCooldownLocked(r.clock.Now())
+	r.mu.Unlock()
 }
 
 func (r *Runtime) notifyBreakComing(taskID int) {
@@ -453,7 +477,6 @@ func (r *Runtime) endBreak(taskID int) {
 	r.mu.Unlock()
 	r.unlockScreen()
 	r.notify("Break Complete", "Break period ended. Continue your task.")
-	r.startCompletionAlert()
 }
 
 func (r *Runtime) relockIfBreak() {

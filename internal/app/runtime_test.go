@@ -1,10 +1,13 @@
 package app
 
 import (
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"focus/internal/domain"
 	"focus/internal/effects"
 	"focus/internal/storage"
 )
@@ -291,6 +294,108 @@ func TestRuntimeStartTaskSchedulesBreakTimersWhenEnabled(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatalf("phase = %s, want break", rt.Snapshot().Phase)
+}
+
+func TestRuntimeBreakEndDoesNotTriggerCompletionAlert(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 80 * time.Millisecond
+	cfg.TaskDeep = 120 * time.Millisecond
+	cfg.CooldownShort = 100 * time.Millisecond
+	cfg.CooldownLong = 120 * time.Millisecond
+	cfg.CooldownDeep = 140 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 10 * time.Millisecond
+	cfg.BreakDeepStart = 15 * time.Millisecond
+	cfg.BreakLongDuration = 5 * time.Millisecond
+	cfg.BreakDeepDuration = 5 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownStartDelay = 50 * time.Millisecond
+	cfg.CompletionAlertRepeatInterval = time.Hour
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &soundRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	task, err := rt.StartTask("demo", cfg.TaskLong, false)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if task == nil {
+		t.Fatal("task = nil, want task")
+	}
+
+	time.Sleep(40 * time.Millisecond)
+	if got := rt.Snapshot().Phase; got != domain.PhaseActive {
+		t.Fatalf("phase after break end = %s, want active", got)
+	}
+	if got := actions.Count(); got != 0 {
+		t.Fatalf("sound plays after break end = %d, want 0", got)
+	}
+}
+
+func TestRuntimeCooldownTransitionsFromPendingToActiveToIdle(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("FOCUS_HISTORY_FILE", filepath.Join(dataDir, "history.jsonl"))
+
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 80 * time.Millisecond
+	cfg.TaskDeep = 120 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 10 * time.Millisecond
+	cfg.BreakDeepStart = 15 * time.Millisecond
+	cfg.BreakLongDuration = 5 * time.Millisecond
+	cfg.BreakDeepDuration = 5 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownShort = 100 * time.Millisecond
+	cfg.CooldownLong = 120 * time.Millisecond
+	cfg.CooldownDeep = 140 * time.Millisecond
+	cfg.CooldownStartDelay = 50 * time.Millisecond
+	cfg.CompletionAlertRepeatInterval = time.Hour
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	task, err := rt.StartTask("demo", cfg.TaskShort, true)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if task == nil {
+		t.Fatal("task = nil, want task")
+	}
+
+	waitForPhase := func(want domain.Phase, timeout time.Duration) {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if got := rt.Snapshot().Phase; got == want {
+				return
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+		t.Fatalf("phase = %s, want %s", rt.Snapshot().Phase, want)
+	}
+
+	waitForPhase(domain.PhaseCooldown, 500*time.Millisecond)
+	if got := rt.Status(); !strings.HasPrefix(got, "Cooldown active") {
+		t.Fatalf("status after cooldown start = %q, want cooldown active", got)
+	}
+
+	waitForPhase(domain.PhaseIdle, 1*time.Second)
 }
 
 func TestRuntimePausesAndResumesTaskOnSleep(t *testing.T) {
