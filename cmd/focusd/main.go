@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -50,6 +51,36 @@ func (d *durationFlag) Value() (*time.Duration, bool) {
 	return &value, true
 }
 
+type intFlag struct {
+	value int
+	set   bool
+}
+
+func (i *intFlag) String() string {
+	if i == nil || !i.set {
+		return ""
+	}
+	return fmt.Sprintf("%d", i.value)
+}
+
+func (i *intFlag) Set(raw string) error {
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return err
+	}
+	i.value = value
+	i.set = true
+	return nil
+}
+
+func (i *intFlag) Value() (*int, bool) {
+	if i == nil || !i.set {
+		return nil, false
+	}
+	value := i.value
+	return &value, true
+}
+
 type runtimeFlagSet struct {
 	taskShort  durationFlag
 	taskMedium durationFlag
@@ -71,7 +102,7 @@ type runtimeFlagSet struct {
 	idleWarnAfter durationFlag
 	idleLockAfter durationFlag
 
-	alertRepeatInterval durationFlag
+	alertRepeatCount intFlag
 }
 
 func main() {
@@ -100,7 +131,7 @@ func run() error {
 	flag.Var(&flags.cooldownStart, "cooldown-start-delay", "Override cooldown_start_delay")
 	flag.Var(&flags.idleWarnAfter, "idle-warn-after", "Override idle.warn_after")
 	flag.Var(&flags.idleLockAfter, "idle-lock-after", "Override idle.lock_after")
-	flag.Var(&flags.alertRepeatInterval, "completion-alert-repeat-interval", "Override alert.repeat_interval")
+	flag.Var(&flags.alertRepeatCount, "completion-alert-repeat-count", "Override alert.repeat_count")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -233,8 +264,8 @@ func (f runtimeFlagSet) toOverrides() storage.Overrides {
 	if v, ok := f.idleLockAfter.Value(); ok {
 		overrides.IdleLockAfter = v
 	}
-	if v, ok := f.alertRepeatInterval.Value(); ok {
-		overrides.CompletionAlertRepeatInterval = v
+	if v, ok := f.alertRepeatCount.Value(); ok {
+		overrides.CompletionAlertRepeatCount = v
 	}
 	return overrides
 }
@@ -322,7 +353,7 @@ func traceFlowEnabled() bool {
 
 func logRuntimeConfig(cfg storage.RuntimeConfig) {
 	log.Printf(
-		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] alert=[repeat:%s]",
+		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] alert=[count:%d]",
 		cfg.TaskShort,
 		cfg.TaskMedium,
 		cfg.TaskLong,
@@ -339,7 +370,7 @@ func logRuntimeConfig(cfg storage.RuntimeConfig) {
 		cfg.RelockDelay,
 		cfg.IdleWarnAfter,
 		cfg.IdleLockAfter,
-		cfg.CompletionAlertRepeatInterval,
+		cfg.CompletionAlertRepeatCount,
 	)
 }
 

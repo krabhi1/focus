@@ -26,21 +26,25 @@ type Runtime struct {
 	current *domain.Task
 	nextID  int
 
-	systemLocked           bool
-	noTaskSince            time.Time
-	noTaskWarned           bool
-	relockUntil            time.Time
-	taskPaused             bool
-	taskPauseTaskID        int
-	taskPauseExpireLeft    time.Duration
-	taskPauseBreakWarn     time.Duration
-	taskPauseBreakStart    time.Duration
-	taskPauseHasBreakWarn  bool
-	taskPauseHasBreakStart bool
-	completionAlertActive  bool
-	completionAlertToken   uint64
-	deadlines              map[string]*scheduler.CallbackHandle
+	systemLocked             bool
+	noTaskSince              time.Time
+	noTaskWarned             bool
+	relockUntil              time.Time
+	taskPaused               bool
+	taskPauseTaskID          int
+	taskPauseExpireLeft      time.Duration
+	taskPauseBreakWarn       time.Duration
+	taskPauseBreakStart      time.Duration
+	taskPauseHasBreakWarn    bool
+	taskPauseHasBreakStart   bool
+	completionAlertActive    bool
+	completionAlertToken     uint64
+	completionAlertRemaining int
+
+	deadlines map[string]*scheduler.CallbackHandle
 }
+
+const completionAlertRepeatDelay = 3 * time.Second
 
 func NewRuntime(actions effects.Actions) *Runtime {
 	if actions == nil {
@@ -496,9 +500,15 @@ func (r *Runtime) relockIfBreak() {
 
 func (r *Runtime) startCompletionAlert() {
 	r.mu.Lock()
-	repeatInterval := storage.GetRuntimeConfig().CompletionAlertRepeatInterval
+	repeatCount := storage.GetRuntimeConfig().CompletionAlertRepeatCount
+	if repeatCount <= 0 {
+		r.stopCompletionAlertLocked()
+		r.mu.Unlock()
+		return
+	}
 	r.completionAlertActive = true
 	r.completionAlertToken++
+	r.completionAlertRemaining = repeatCount - 1
 	token := r.completionAlertToken
 	locked := r.systemLocked
 	r.mu.Unlock()
@@ -510,15 +520,20 @@ func (r *Runtime) startCompletionAlert() {
 		r.mu.Unlock()
 		return
 	}
+	if r.completionAlertRemaining <= 0 {
+		r.completionAlertActive = false
+		r.mu.Unlock()
+		return
+	}
 	if locked {
-		r.scheduleCompletionAlertTickLocked(token, repeatInterval)
+		r.scheduleCompletionAlertTickLocked(token)
 	}
 	r.mu.Unlock()
 }
 
-func (r *Runtime) scheduleCompletionAlertTickLocked(token uint64, repeatInterval time.Duration) {
+func (r *Runtime) scheduleCompletionAlertTickLocked(token uint64) {
 	r.cancelDeadlineLocked("completion_alert")
-	nextAt := r.clock.Now().Add(repeatInterval)
+	nextAt := r.clock.Now().Add(completionAlertRepeatDelay)
 	r.scheduleDeadlineLocked("completion_alert", nextAt, func() {
 		r.runCompletionAlertTick(token)
 	})
@@ -526,15 +541,16 @@ func (r *Runtime) scheduleCompletionAlertTickLocked(token uint64, repeatInterval
 
 func (r *Runtime) runCompletionAlertTick(token uint64) {
 	r.mu.Lock()
-	if token != r.completionAlertToken || !r.completionAlertActive || !r.systemLocked {
+	if token != r.completionAlertToken || !r.completionAlertActive || !r.systemLocked || r.completionAlertRemaining <= 0 {
 		if token == r.completionAlertToken {
 			r.cancelDeadlineLocked("completion_alert")
 		}
 		r.mu.Unlock()
 		return
 	}
-	repeatInterval := storage.GetRuntimeConfig().CompletionAlertRepeatInterval
 	r.cancelDeadlineLocked("completion_alert")
+	r.completionAlertRemaining--
+	shouldRepeat := r.completionAlertRemaining > 0
 	r.mu.Unlock()
 
 	r.playSound("assets/task-ending.mp3")
@@ -544,8 +560,10 @@ func (r *Runtime) runCompletionAlertTick(token uint64) {
 		r.mu.Unlock()
 		return
 	}
-	if r.systemLocked {
-		r.scheduleCompletionAlertTickLocked(token, repeatInterval)
+	if r.systemLocked && shouldRepeat {
+		r.scheduleCompletionAlertTickLocked(token)
+	} else if !shouldRepeat {
+		r.completionAlertActive = false
 	}
 	r.mu.Unlock()
 }
@@ -643,10 +661,10 @@ func (r *Runtime) stopCompletionAlertLocked() {
 }
 
 func (r *Runtime) resumeCompletionAlertIfNeededLocked() {
-	if !r.completionAlertActive || !r.systemLocked || r.hasDeadlineLocked("completion_alert") {
+	if !r.completionAlertActive || !r.systemLocked || r.hasDeadlineLocked("completion_alert") || r.completionAlertRemaining <= 0 {
 		return
 	}
-	r.scheduleCompletionAlertTickLocked(r.completionAlertToken, storage.GetRuntimeConfig().CompletionAlertRepeatInterval)
+	r.scheduleCompletionAlertTickLocked(r.completionAlertToken)
 }
 
 func (r *Runtime) scheduleDeadlineLocked(name string, at time.Time, fn func()) {

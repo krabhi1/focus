@@ -33,7 +33,7 @@ Create `focus.dev.json` in the repo root:
     "lock_after": "10s"
   },
   "alert": {
-    "repeat_interval": "1s"
+    "repeat_count": 3
   }
 }
 ```

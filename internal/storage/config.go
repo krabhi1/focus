@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +49,7 @@ type idleJSON struct {
 }
 
 type alertJSON struct {
-	RepeatInterval string `json:"repeat_interval"`
+	RepeatCount *int `json:"repeat_count"`
 }
 
 type Overrides struct {
@@ -71,7 +72,7 @@ type Overrides struct {
 	IdleWarnAfter      *time.Duration
 	IdleLockAfter      *time.Duration
 
-	CompletionAlertRepeatInterval *time.Duration
+	CompletionAlertRepeatCount *int
 }
 
 type RuntimeConfig struct {
@@ -92,9 +93,9 @@ type RuntimeConfig struct {
 	RelockDelay        time.Duration
 	CooldownStartDelay time.Duration
 
-	IdleWarnAfter                 time.Duration
-	IdleLockAfter                 time.Duration
-	CompletionAlertRepeatInterval time.Duration
+	IdleWarnAfter              time.Duration
+	IdleLockAfter              time.Duration
+	CompletionAlertRepeatCount int
 }
 
 const (
@@ -143,9 +144,9 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		RelockDelay:        RelockDelay,
 		CooldownStartDelay: CooldownStartDelay,
 
-		IdleWarnAfter:                 IdleWarningAfter,
-		IdleLockAfter:                 IdleLockAfter,
-		CompletionAlertRepeatInterval: 5 * time.Second,
+		IdleWarnAfter:              IdleWarningAfter,
+		IdleLockAfter:              IdleLockAfter,
+		CompletionAlertRepeatCount: 3,
 	}
 }
 
@@ -185,12 +186,14 @@ func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 		{"cooldown_start_delay", cfg.CooldownStartDelay},
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
-		{"alert.repeat_interval", cfg.CompletionAlertRepeatInterval},
 	}
 	for _, item := range positive {
 		if item.value <= 0 {
 			return fmt.Errorf("%s must be > 0", item.name)
 		}
+	}
+	if cfg.CompletionAlertRepeatCount < 0 {
+		return fmt.Errorf("alert.repeat_count must be >= 0")
 	}
 	if cfg.RelockDelay < 0 {
 		return fmt.Errorf("relock_delay must be >= 0")
@@ -246,7 +249,7 @@ func SupportedConfigKeys() []string {
 		"cooldown_start_delay",
 		"idle.warn_after",
 		"idle.lock_after",
-		"alert.repeat_interval",
+		"alert.repeat_count",
 	}
 }
 
@@ -284,8 +287,8 @@ func DescribeConfigKey(cfg RuntimeConfig, key string) (string, error) {
 		return cfg.IdleWarnAfter.String(), nil
 	case "idle.lock_after":
 		return cfg.IdleLockAfter.String(), nil
-	case "alert.repeat_interval":
-		return cfg.CompletionAlertRepeatInterval.String(), nil
+	case "alert.repeat_count":
+		return strconv.Itoa(cfg.CompletionAlertRepeatCount), nil
 	default:
 		return "", fmt.Errorf("unknown config key %q", key)
 	}
@@ -340,6 +343,9 @@ func Load(path string) (File, bool, error) {
 	if err := rejectLegacyBreakRelockDelay(data); err != nil {
 		return File{}, true, err
 	}
+	if err := rejectLegacyAlertRepeatInterval(data); err != nil {
+		return File{}, true, err
+	}
 	var cfg File
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return File{}, true, fmt.Errorf("parse config JSON: %w", err)
@@ -356,6 +362,9 @@ func loadConfigMap(path string) (map[string]any, bool, error) {
 		return nil, false, fmt.Errorf("read config: %w", err)
 	}
 	if err := rejectLegacyBreakRelockDelay(data); err != nil {
+		return nil, true, err
+	}
+	if err := rejectLegacyAlertRepeatInterval(data); err != nil {
 		return nil, true, err
 	}
 	var raw map[string]any
@@ -433,8 +442,8 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	if err := applyDuration(&resolved.IdleLockAfter, fileCfg.Idle.LockAfter); err != nil {
 		return RuntimeConfig{}, fmt.Errorf("invalid idle.lock_after: %w", err)
 	}
-	if err := applyDuration(&resolved.CompletionAlertRepeatInterval, fileCfg.Alert.RepeatInterval); err != nil {
-		return RuntimeConfig{}, fmt.Errorf("invalid alert.repeat_interval: %w", err)
+	if fileCfg.Alert.RepeatCount != nil {
+		resolved.CompletionAlertRepeatCount = *fileCfg.Alert.RepeatCount
 	}
 	applyOverride(&resolved.TaskShort, overrides.TaskShort)
 	applyOverride(&resolved.TaskMedium, overrides.TaskMedium)
@@ -452,7 +461,7 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	applyOverride(&resolved.CooldownStartDelay, overrides.CooldownStartDelay)
 	applyOverride(&resolved.IdleWarnAfter, overrides.IdleWarnAfter)
 	applyOverride(&resolved.IdleLockAfter, overrides.IdleLockAfter)
-	applyOverride(&resolved.CompletionAlertRepeatInterval, overrides.CompletionAlertRepeatInterval)
+	applyOverrideInt(&resolved.CompletionAlertRepeatCount, overrides.CompletionAlertRepeatCount)
 	return resolved, nil
 }
 
@@ -469,6 +478,12 @@ func applyDuration(dst *time.Duration, raw string) error {
 }
 
 func applyOverride(dst *time.Duration, value *time.Duration) {
+	if value != nil {
+		*dst = *value
+	}
+}
+
+func applyOverrideInt(dst *int, value *int) {
 	if value != nil {
 		*dst = *value
 	}
@@ -495,8 +510,18 @@ func applyConfigValue(raw map[string]any, key, rawValue string) error {
 	switch section {
 	case "task", "cooldown", "break", "idle", "alert":
 		switch leaf {
-		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after", "repeat_interval":
+		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after":
 			sectionMap[leaf] = rawValue
+			return nil
+		case "repeat_count":
+			value, err := strconv.Atoi(rawValue)
+			if err != nil {
+				return fmt.Errorf("invalid config value %q for %s: %w", rawValue, key, err)
+			}
+			if value < 0 {
+				return fmt.Errorf("alert.repeat_count must be >= 0")
+			}
+			sectionMap[leaf] = value
 			return nil
 		default:
 			return fmt.Errorf("unknown config key %q", key)
@@ -553,6 +578,25 @@ func rejectLegacyBreakRelockDelay(data []byte) error {
 	}
 	if _, ok := breakFields["relock_delay"]; ok {
 		return fmt.Errorf("legacy break.relock_delay is not supported; use top-level relock_delay")
+	}
+	return nil
+}
+
+func rejectLegacyAlertRepeatInterval(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	alertRaw, ok := raw["alert"]
+	if !ok {
+		return nil
+	}
+	var alertFields map[string]json.RawMessage
+	if err := json.Unmarshal(alertRaw, &alertFields); err != nil {
+		return nil
+	}
+	if _, ok := alertFields["repeat_interval"]; ok {
+		return fmt.Errorf("legacy alert.repeat_interval is not supported; use alert.repeat_count")
 	}
 	return nil
 }

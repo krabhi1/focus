@@ -69,7 +69,7 @@ Example:
     "lock_after": "2m"
   },
   "alert": {
-    "repeat_interval": "5s"
+    "repeat_count": 3
   }
 }
 ```
@@ -145,7 +145,7 @@ These values control the wall-clock no-task timer. They are not tied to helper i
 
 Completion alert settings.
 
-- `alert.repeat_interval`: how often the completion sound repeats while the screen is locked after task completion
+- `alert.repeat_count`: how many times the completion sound plays after task completion; `0` disables sound, `1` plays once, higher values repeat every 3 seconds while the screen stays locked
 
 Sound playback is best-effort. Focus tries common headless audio tools and skips sound if none are installed.
 
@@ -159,7 +159,7 @@ Examples:
 - task presets must be strictly increasing
 - break timings must fit inside the task duration
 - idle warn must be less than idle lock
-- alert repeat interval must be positive
+- alert repeat count must be non-negative
 
 If config validation fails, the daemon exits before serving requests.
 
@@ -200,7 +200,7 @@ Common flags:
 - `--cooldown-start-delay <duration>`: override `cooldown_start_delay`
 - `--idle-warn-after <duration>`: override `idle.warn_after`
 - `--idle-lock-after <duration>`: override `idle.lock_after`
-- `--completion-alert-repeat-interval <duration>`: override `alert.repeat_interval`
+- `--completion-alert-repeat-count <count>`: override `alert.repeat_count`
 
 Precedence:
 
@@ -446,7 +446,7 @@ Typical values are long enough to match real work sessions:
     "lock_after": "2m"
   },
   "alert": {
-    "repeat_interval": "5s"
+    "repeat_count": 3
   }
 }
 ```
@@ -482,7 +482,7 @@ Use a local `focus.dev.json` when you want to test the full flow quickly:
     "lock_after": "10s"
   },
   "alert": {
-    "repeat_interval": "1s"
+    "repeat_count": 3
   }
 }
 ```

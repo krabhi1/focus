@@ -167,9 +167,30 @@ func TestRuntimeLoadHistoryAndCount(t *testing.T) {
 	}
 }
 
+func TestRuntimeCompletionAlertPlaysOnceWhenCountIsOne(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.CompletionAlertRepeatCount = 1
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &soundRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	rt.startCompletionAlert()
+	time.Sleep(40 * time.Millisecond)
+	if got := actions.Count(); got != 1 {
+		t.Fatalf("plays with repeat count 1 = %d, want 1", got)
+	}
+}
+
 func TestRuntimeCompletionAlertRepeatsWhileLockedAndStopsOnUnlock(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
-	cfg.CompletionAlertRepeatInterval = 10 * time.Millisecond
+	cfg.CompletionAlertRepeatCount = 2
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
@@ -201,7 +222,7 @@ func TestRuntimeCompletionAlertRepeatsWhileLockedAndStopsOnUnlock(t *testing.T) 
 
 	rt.SetSystemLocked(true)
 	rt.OnScreenLocked()
-	waitForPlays(2, 200*time.Millisecond)
+	waitForPlays(2, 4*time.Second)
 	beforeUnlock := actions.Count()
 
 	rt.SetSystemLocked(false)
@@ -312,7 +333,7 @@ func TestRuntimeBreakEndDoesNotTriggerCompletionAlert(t *testing.T) {
 	cfg.BreakDeepDuration = 5 * time.Millisecond
 	cfg.RelockDelay = 1 * time.Millisecond
 	cfg.CooldownStartDelay = 50 * time.Millisecond
-	cfg.CompletionAlertRepeatInterval = time.Hour
+	cfg.CompletionAlertRepeatCount = 0
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}
@@ -360,7 +381,7 @@ func TestRuntimeCooldownTransitionsFromPendingToActiveToIdle(t *testing.T) {
 	cfg.CooldownLong = 120 * time.Millisecond
 	cfg.CooldownDeep = 140 * time.Millisecond
 	cfg.CooldownStartDelay = 50 * time.Millisecond
-	cfg.CompletionAlertRepeatInterval = time.Hour
+	cfg.CompletionAlertRepeatCount = 0
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
 	}

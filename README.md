@@ -104,6 +104,7 @@ Run the daemon and client from the built binaries:
 - `focus reload` reloads daemon configuration from disk.
 - `focus config <key>` shows the current value and default.
 - `focus config <key> <value>` updates one config value and reloads the daemon.
+- `focus config alert.repeat_count` controls how many times the task-ending sound can play; `0` means no sound.
 - `focus doctor` prints dependency, socket, daemon IPC, and service health checks.
 - `focus version` prints the installed binary version.
 - `focus update` upgrades to the latest release.
