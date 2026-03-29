@@ -64,8 +64,8 @@ func TestDefaultRuntimeConfigDefaults(t *testing.T) {
 	if cfg.BreakDeepDuration != 5*time.Minute {
 		t.Fatalf("BreakDeepDuration = %s, want 5m", cfg.BreakDeepDuration)
 	}
-	if cfg.CompletionAlertRepeatInterval != 5*time.Second {
-		t.Fatalf("CompletionAlertRepeatInterval = %s, want 5s", cfg.CompletionAlertRepeatInterval)
+	if cfg.CompletionAlertRepeatCount != 3 {
+		t.Fatalf("CompletionAlertRepeatCount = %d, want 3", cfg.CompletionAlertRepeatCount)
 	}
 }
 
