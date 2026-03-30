@@ -11,7 +11,7 @@ import (
 	"focus/internal/storage"
 )
 
-func runDoctor() {
+func runDoctor(all bool) {
 	fmt.Println(colorTitle("Focus Doctor"))
 	fmt.Println("")
 
@@ -53,6 +53,10 @@ func runDoctor() {
 	}
 
 	printSystemdStatus()
+	if all {
+		fmt.Println("")
+		printRuntimeDebug()
+	}
 }
 
 func printCommandCheck(name string, required bool) {
@@ -110,5 +114,32 @@ func printSystemdStatus() {
 	}
 	if activeErr != nil && active == "unknown" {
 		fmt.Printf("%s %s\n", colorInfo("service.active.err:"), colorWarn(activeErr.Error()))
+	}
+}
+
+func printRuntimeDebug() {
+	fmt.Println(colorHeading("runtime debug:"))
+	conn, err := connectDaemon()
+	if err != nil {
+		fmt.Printf("  %s %v\n", colorInfo("daemon.debug:"), colorWarn(err.Error()))
+		return
+	}
+	defer conn.Close()
+
+	res, err := SendRequest(conn, protocol.Request{Command: "debug"})
+	if err != nil {
+		fmt.Printf("  %s %v\n", colorInfo("daemon.debug:"), colorWarn(err.Error()))
+		return
+	}
+	if res.Error != nil {
+		fmt.Printf("  %s %v\n", colorInfo("daemon.debug:"), colorWarn(res.Error.Message))
+		return
+	}
+	if res.Success == nil || strings.TrimSpace(res.Success.Message) == "" {
+		fmt.Printf("  %s %s\n", colorInfo("daemon.debug:"), colorWarn("empty"))
+		return
+	}
+	for _, line := range strings.Split(strings.TrimRight(res.Success.Message, "\n"), "\n") {
+		fmt.Println("  " + line)
 	}
 }

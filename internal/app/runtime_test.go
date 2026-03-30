@@ -167,6 +167,37 @@ func TestRuntimeLoadHistoryAndCount(t *testing.T) {
 	}
 }
 
+func TestRuntimeDebugStringIncludesStateAndConfig(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.CompletionAlertRepeatCount = 2
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	if _, err := rt.StartTask("demo", cfg.TaskShort, false); err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	debug := rt.DebugString()
+	if !strings.Contains(debug, "phase: active") {
+		t.Fatalf("debug = %q, want active phase", debug)
+	}
+	if !strings.Contains(debug, "current_task:") {
+		t.Fatalf("debug = %q, want current task", debug)
+	}
+	if !strings.Contains(debug, "deadlines:") {
+		t.Fatalf("debug = %q, want deadline section", debug)
+	}
+	if !strings.Contains(debug, "config.alert.repeat_count: 2") {
+		t.Fatalf("debug = %q, want alert repeat count", debug)
+	}
+}
+
 func TestRuntimeCompletionAlertPlaysOnceWhenCountIsOne(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.CompletionAlertRepeatCount = 1

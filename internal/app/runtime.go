@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,7 +43,8 @@ type Runtime struct {
 	completionAlertToken     uint64
 	completionAlertRemaining int
 
-	deadlines map[string]*scheduler.CallbackHandle
+	deadlines  map[string]*scheduler.CallbackHandle
+	deadlineAt map[string]time.Time
 }
 
 const completionAlertRepeatDelay = 3 * time.Second
@@ -51,13 +54,14 @@ func NewRuntime(actions effects.Actions) *Runtime {
 		actions = effects.RealActions{}
 	}
 	rt := &Runtime{
-		actions:   actions,
-		clock:     realRuntimeClock{},
-		timers:    scheduler.NewCallbackLoop(schedulerClockAdapter{clock: realRuntimeClock{}}),
-		trace:     os.Getenv("FOCUS_TRACE_FLOW") == "1",
-		state:     domain.InitialState(),
-		nextID:    1,
-		deadlines: map[string]*scheduler.CallbackHandle{},
+		actions:    actions,
+		clock:      realRuntimeClock{},
+		timers:     scheduler.NewCallbackLoop(schedulerClockAdapter{clock: realRuntimeClock{}}),
+		trace:      os.Getenv("FOCUS_TRACE_FLOW") == "1",
+		state:      domain.InitialState(),
+		nextID:     1,
+		deadlines:  map[string]*scheduler.CallbackHandle{},
+		deadlineAt: map[string]time.Time{},
 	}
 	rt.mu.Lock()
 	rt.resumeNoTaskTrackingIfNeededLocked(rt.clock.Now())
@@ -207,6 +211,67 @@ func (r *Runtime) Status() string {
 		return fmt.Sprintf("No task active | Lock in: %s", remaining.Round(time.Second))
 	}
 	return status.Render(snapshot, now)
+}
+
+func (r *Runtime) DebugString() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := r.clock.Now()
+	cfg := storage.GetRuntimeConfig()
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "now: %s\n", now.Format(time.RFC3339Nano))
+	fmt.Fprintf(&b, "phase: %s\n", r.state.Phase)
+	fmt.Fprintf(&b, "screen_locked: %t\n", r.systemLocked)
+	fmt.Fprintf(&b, "no_task_since: %s\n", formatDebugTime(r.noTaskSince))
+	fmt.Fprintf(&b, "no_task_warned: %t\n", r.noTaskWarned)
+	fmt.Fprintf(&b, "relock_until: %s\n", formatDebugTime(r.relockUntil))
+	fmt.Fprintf(&b, "task_paused: %t\n", r.taskPaused)
+	fmt.Fprintf(&b, "task_pause_task_id: %d\n", r.taskPauseTaskID)
+	fmt.Fprintf(&b, "task_pause_expire_left: %s\n", r.taskPauseExpireLeft)
+	fmt.Fprintf(&b, "task_pause_break_warn: %s\n", r.taskPauseBreakWarn)
+	fmt.Fprintf(&b, "task_pause_break_start: %s\n", r.taskPauseBreakStart)
+	fmt.Fprintf(&b, "task_pause_has_break_warn: %t\n", r.taskPauseHasBreakWarn)
+	fmt.Fprintf(&b, "task_pause_has_break_start: %t\n", r.taskPauseHasBreakStart)
+	fmt.Fprintf(&b, "completion_alert_active: %t\n", r.completionAlertActive)
+	fmt.Fprintf(&b, "completion_alert_remaining: %d\n", r.completionAlertRemaining)
+
+	if r.current == nil {
+		b.WriteString("current_task: none\n")
+	} else {
+		fmt.Fprintf(&b, "current_task: [%d] %s | %s | started %s\n", r.current.ID, r.current.Title, r.current.Duration.Round(time.Second), r.current.StartTime.Format(time.RFC3339Nano))
+		fmt.Fprintf(&b, "current_task_remaining: %s\n", remainingUntil(r.current.StartTime.Add(r.current.Duration), now))
+	}
+
+	keys := sortedDeadlineKeys(r.deadlineAt)
+	if len(keys) == 0 {
+		b.WriteString("deadlines: none\n")
+	} else {
+		b.WriteString("deadlines:\n")
+		for _, key := range keys {
+			fmt.Fprintf(&b, "  - %s at %s\n", key, r.deadlineAt[key].Format(time.RFC3339Nano))
+		}
+	}
+
+	fmt.Fprintf(&b, "config.task.short: %s\n", cfg.TaskShort)
+	fmt.Fprintf(&b, "config.task.medium: %s\n", cfg.TaskMedium)
+	fmt.Fprintf(&b, "config.task.long: %s\n", cfg.TaskLong)
+	fmt.Fprintf(&b, "config.task.deep: %s\n", cfg.TaskDeep)
+	fmt.Fprintf(&b, "config.cooldown.short: %s\n", cfg.CooldownShort)
+	fmt.Fprintf(&b, "config.cooldown.long: %s\n", cfg.CooldownLong)
+	fmt.Fprintf(&b, "config.cooldown.deep: %s\n", cfg.CooldownDeep)
+	fmt.Fprintf(&b, "config.break.long_start: %s\n", cfg.BreakLongStart)
+	fmt.Fprintf(&b, "config.break.deep_start: %s\n", cfg.BreakDeepStart)
+	fmt.Fprintf(&b, "config.break.warning: %s\n", cfg.BreakWarning)
+	fmt.Fprintf(&b, "config.break.long_duration: %s\n", cfg.BreakLongDuration)
+	fmt.Fprintf(&b, "config.break.deep_duration: %s\n", cfg.BreakDeepDuration)
+	fmt.Fprintf(&b, "config.relock_delay: %s\n", cfg.RelockDelay)
+	fmt.Fprintf(&b, "config.cooldown_start_delay: %s\n", cfg.CooldownStartDelay)
+	fmt.Fprintf(&b, "config.idle.warn_after: %s\n", cfg.IdleWarnAfter)
+	fmt.Fprintf(&b, "config.idle.lock_after: %s\n", cfg.IdleLockAfter)
+	fmt.Fprintf(&b, "config.alert.repeat_count: %d\n", cfg.CompletionAlertRepeatCount)
+	return b.String()
 }
 
 func (r *Runtime) SetSystemLocked(locked bool) {
@@ -671,12 +736,16 @@ func (r *Runtime) scheduleDeadlineLocked(name string, at time.Time, fn func()) {
 	if r.deadlines == nil {
 		r.deadlines = make(map[string]*scheduler.CallbackHandle)
 	}
+	if r.deadlineAt == nil {
+		r.deadlineAt = make(map[string]time.Time)
+	}
 	r.cancelDeadlineLocked(name)
 	handle := r.timers.Schedule(at, fn)
 	if handle == nil {
 		return
 	}
 	r.deadlines[name] = handle
+	r.deadlineAt[name] = at
 }
 
 func (r *Runtime) cancelDeadlineLocked(name string) {
@@ -689,6 +758,7 @@ func (r *Runtime) cancelDeadlineLocked(name string) {
 	}
 	handle.Cancel()
 	delete(r.deadlines, name)
+	delete(r.deadlineAt, name)
 }
 
 func (r *Runtime) hasDeadlineLocked(name string) bool {
@@ -737,6 +807,25 @@ func (r *Runtime) startDecisionLocked() error {
 	default:
 		return fmt.Errorf("a task is already active")
 	}
+}
+
+func formatDebugTime(t time.Time) string {
+	if t.IsZero() {
+		return "none"
+	}
+	return t.Format(time.RFC3339Nano)
+}
+
+func sortedDeadlineKeys(m map[string]time.Time) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 type breakPlan struct {

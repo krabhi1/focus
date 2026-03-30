@@ -59,6 +59,8 @@ func (s *Server) handleRequest(req protocol.Request) protocol.Response {
 		return s.handleHistory(req.HistoryAll)
 	case "reload":
 		return s.handleReload()
+	case "debug":
+		return s.handleDebug()
 	default:
 		return protocol.Response{Type: "error", Error: &protocol.ErrorResponse{Message: fmt.Sprintf("Unknown command: %s", req.Command)}}
 	}
@@ -135,6 +137,10 @@ func (s *Server) handleHistory(all bool) protocol.Response {
 		lines = append(lines, formatHistoryLine(task))
 	}
 	return protocol.Response{Type: "success", Success: &protocol.SuccessResponse{Message: strings.Join(lines, "\n")}}
+}
+
+func (s *Server) handleDebug() protocol.Response {
+	return protocol.Response{Type: "success", Success: &protocol.SuccessResponse{Message: s.runtime.DebugString()}}
 }
 
 func formatHistoryLine(task domain.Task) string {

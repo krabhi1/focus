@@ -44,7 +44,11 @@ func main() {
 		printVersion()
 		return
 	case "doctor":
-		runDoctor()
+		doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
+		doctorCmd.SetOutput(io.Discard)
+		all := doctorCmd.Bool("all", false, "Show full runtime debug output")
+		doctorCmd.Parse(os.Args[2:])
+		runDoctor(*all)
 		return
 	case "config":
 		if err := runConfig(os.Args[2:], reloadDaemon); err != nil {
@@ -188,7 +192,7 @@ func printHelp() {
 	fmt.Println("  " + colorInfo("focus history [--all]"))
 	fmt.Println("  " + colorInfo("focus reload"))
 	fmt.Println("  " + colorInfo("focus config <key> <value>"))
-	fmt.Println("  " + colorInfo("focus doctor"))
+	fmt.Println("  " + colorInfo("focus doctor [--all]"))
 	fmt.Println("  " + colorInfo("focus version"))
 	fmt.Println("  " + colorInfo("focus update [--version <tag>] [--prefix <path>] [--yes]"))
 	fmt.Println("  " + colorInfo("focus uninstall [--prefix <path>]"))
