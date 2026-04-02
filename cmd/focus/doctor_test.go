@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -87,6 +89,30 @@ func TestDetectSoundBackendFallsBackToMpv(t *testing.T) {
 
 	if got := detectSoundBackend(); got != "mpv" {
 		t.Fatalf("detectSoundBackend() = %q, want mpv", got)
+	}
+}
+
+func TestPrintInstalledCommandCheckUsesLibexecPath(t *testing.T) {
+	prefix := t.TempDir()
+	libexecDir := filepath.Join(prefix, "libexec", "focus")
+	if err := os.MkdirAll(libexecDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeExecutable(t, libexecDir, "focusd")
+
+	t.Setenv("FOCUS_LIBEXEC_DIR", libexecDir)
+
+	var stdout bytes.Buffer
+	withStdout(&stdout, func() {
+		printInstalledCommandCheck("focusd", true)
+	})
+
+	got := stdout.String()
+	if !strings.Contains(got, "dep.focusd:") {
+		t.Fatalf("output = %q, want focusd check", got)
+	}
+	if !strings.Contains(got, libexecDir) {
+		t.Fatalf("output = %q, want libexec path", got)
 	}
 }
 

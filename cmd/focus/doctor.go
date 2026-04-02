@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"focus/internal/effects"
@@ -16,8 +17,8 @@ func runDoctor(all bool) {
 	fmt.Println("")
 
 	printCommandCheck("focus", true)
-	printCommandCheck("focusd", true)
-	printCommandCheck("focus-events", true)
+	printInstalledCommandCheck("focusd", true)
+	printInstalledCommandCheck("focus-events", true)
 	printCommandCheck("notify-send", true)
 	printCommandCheck("systemctl", false)
 	printBackendCheck("desktop", effects.DetectDesktopFlavor())
@@ -69,6 +70,29 @@ func printCommandCheck(name string, required bool) {
 	} else {
 		fmt.Printf("%s %s\n", colorInfo("dep."+name+":"), colorWarn("missing (optional)"))
 	}
+}
+
+func printInstalledCommandCheck(name string, required bool) {
+	if path := installedBinaryPath(name); path != "" {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+			fmt.Printf("%s %s (%s)\n", colorInfo("dep."+name+":"), colorSuccess("ok"), path)
+			return
+		}
+	}
+	printCommandCheck(name, required)
+}
+
+func installedBinaryPath(name string) string {
+	if p := os.Getenv("FOCUS_LIBEXEC_DIR"); p != "" {
+		return filepath.Join(p, name)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	bindir := filepath.Dir(exe)
+	prefix := filepath.Dir(bindir)
+	return filepath.Join(prefix, "libexec", "focus", name)
 }
 
 func printBackendCheck(label, backend string) {
