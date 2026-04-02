@@ -80,14 +80,25 @@ func waitForExit(cmd *exec.Cmd, errCh chan<- error) {
 }
 
 func resolveHelperPath() (string, error) {
-	execPath, err := os.Executable()
-	if err == nil {
-		candidate := filepath.Join(filepath.Dir(execPath), "focus-events")
+	if p := os.Getenv("FOCUS_LIBEXEC_DIR"); p != "" {
+		candidate := filepath.Join(p, "focus-events")
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			return candidate, nil
 		}
 	}
-	for _, candidate := range []string{filepath.Join("dist", "focus-events"), "focus-events"} {
+	execPath, err := os.Executable()
+	if err == nil {
+		execDir := filepath.Dir(execPath)
+		for _, candidate := range []string{
+			filepath.Join(execDir, "focus-events"),
+			filepath.Join(filepath.Dir(execDir), "libexec", "focus", "focus-events"),
+		} {
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				return candidate, nil
+			}
+		}
+	}
+	for _, candidate := range []string{filepath.Join("dist", "focus-events"), filepath.Join("libexec", "focus", "focus-events"), "focus-events"} {
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			return candidate, nil
 		}

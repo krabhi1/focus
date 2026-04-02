@@ -6,6 +6,7 @@ REPO="${FOCUS_REPO:-krabhi1/focus}"
 VERSION="latest"
 PREFIX="${PREFIX:-$HOME/.local}"
 BINDIR="$PREFIX/bin"
+LIBEXECDIR="$PREFIX/libexec/focus"
 NO_SYSTEMD=0
 
 usage() {
@@ -14,7 +15,7 @@ Usage: install.sh [options]
 
 Options:
   --version <tag>      Install a specific version (example: v0.1.0). Default: latest release
-  --prefix <path>      Install binaries under <path>/bin (default: ~/.local)
+  --prefix <path>      Install binaries under <path> (default: ~/.local)
   --no-systemd         Skip systemd user service install/enable
   -h, --help           Show help
 
@@ -115,13 +116,16 @@ fi
 
 mkdir -p "$BINDIR"
 install -m 0755 "$extracted_dir/focus" "$BINDIR/focus"
-install -m 0755 "$extracted_dir/focusd" "$BINDIR/focusd"
-install -m 0755 "$extracted_dir/focus-events" "$BINDIR/focus-events"
+rm -f "$BINDIR/focusd" "$BINDIR/focus-events"
+mkdir -p "$LIBEXECDIR"
+install -m 0755 "$extracted_dir/libexec/focus/focusd" "$LIBEXECDIR/focusd"
+install -m 0755 "$extracted_dir/libexec/focus/focus-events" "$LIBEXECDIR/focus-events"
 mkdir -p "$PREFIX/share/focus/assets"
 if [[ -d "$extracted_dir/assets" ]]; then
   cp -r "$extracted_dir/assets/." "$PREFIX/share/focus/assets/"
 fi
 echo "Installed binaries to $BINDIR"
+echo "Installed private runtime files to $LIBEXECDIR"
 
 if [[ "$NO_SYSTEMD" -eq 1 ]]; then
   echo "Skipping systemd setup (--no-systemd)"
@@ -147,9 +151,8 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-ExecStart=$BINDIR/focusd
+ExecStart=$LIBEXECDIR/focusd
 WorkingDirectory=%h
-Environment=PATH=$BINDIR:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

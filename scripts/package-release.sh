@@ -75,10 +75,11 @@ for target in "${target_array[@]}"; do
   stage_dir="$(mktemp -d)"
   pkg_dir="$stage_dir/focus_${VERSION}_${goos}_${goarch}"
   mkdir -p "$pkg_dir"
+  mkdir -p "$pkg_dir/libexec/focus"
 
   echo "Building focus and focusd for $goos/$goarch..."
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$pkg_dir/focus" "$ROOT_DIR/cmd/focus"
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/focusd" "$ROOT_DIR/cmd/focusd"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/libexec/focus/focusd" "$ROOT_DIR/cmd/focusd"
 
   if [[ "$goos" != "$HOST_GOOS" || "$goarch" != "$HOST_GOARCH" ]]; then
     echo "focus-events native helper currently requires native gcc/libs; cross-build unsupported for $goos/$goarch" >&2
@@ -89,7 +90,7 @@ for target in "${target_array[@]}"; do
 
   echo "Building focus-events for $goos/$goarch..."
   native_flags="$(pkg-config --cflags --libs libsystemd)"
-  gcc -Wall -Wextra -O2 "$ROOT_DIR/native/session_event_listener.c" -o "$pkg_dir/focus-events" $native_flags
+  gcc -Wall -Wextra -O2 "$ROOT_DIR/native/session_event_listener.c" -o "$pkg_dir/libexec/focus/focus-events" $native_flags
 
   cp -r "$ROOT_DIR/assets" "$pkg_dir/assets"
   cp "$ROOT_DIR/README.md" "$pkg_dir/README.md"

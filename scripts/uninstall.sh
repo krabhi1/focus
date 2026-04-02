@@ -4,6 +4,7 @@ set -euo pipefail
 
 PREFIX="${PREFIX:-$HOME/.local}"
 BINDIR="$PREFIX/bin"
+LIBEXECDIR="$PREFIX/libexec/focus"
 SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"
 
 usage() {
@@ -11,7 +12,7 @@ usage() {
 Usage: scripts/uninstall.sh [options]
 
 Options:
-  --prefix <path>      Remove binaries from <path>/bin (default: ~/.local)
+  --prefix <path>      Remove binaries from <path> (default: ~/.local)
   -h, --help           Show this help
 EOF
 }
@@ -49,8 +50,10 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 rm -f "$BINDIR/focus" "$BINDIR/focusd" "$BINDIR/focus-events"
+rm -f "$LIBEXECDIR/focusd" "$LIBEXECDIR/focus-events"
 rm -rf "$PREFIX/share/focus/assets"
 if [[ -d "$PREFIX/share/focus" ]] && [[ -z "$(ls -A "$PREFIX/share/focus" 2>/dev/null)" ]]; then
   rmdir "$PREFIX/share/focus" || true
 fi
 echo "Removed binaries from $BINDIR"
+rm -rf "$LIBEXECDIR"

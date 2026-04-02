@@ -11,6 +11,7 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 	tmp := t.TempDir()
 	prefix := filepath.Join(tmp, "focus-prefix")
 	bindir := filepath.Join(prefix, "bin")
+	libexecDir := filepath.Join(prefix, "libexec", "focus")
 	assetsDir := filepath.Join(prefix, "share", "focus", "assets")
 	serviceDir := filepath.Join(tmp, "home", ".config", "systemd", "user")
 	servicePath := filepath.Join(serviceDir, "focusd.service")
@@ -26,13 +27,16 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(libexecDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(bindir, "focus"), []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bindir, "focusd"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(libexecDir, "focusd"), []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bindir, "focus-events"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(libexecDir, "focus-events"), []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(servicePath, []byte("[Service]\n"), 0o644); err != nil {
@@ -61,6 +65,14 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(bindir, name)); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after uninstall", name)
 		}
+	}
+	for _, name := range []string{"focusd", "focus-events"} {
+		if _, err := os.Stat(filepath.Join(libexecDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists after uninstall", name)
+		}
+	}
+	if _, err := os.Stat(libexecDir); !os.IsNotExist(err) {
+		t.Fatalf("libexec dir still exists after uninstall")
 	}
 	if _, err := os.Stat(servicePath); !os.IsNotExist(err) {
 		t.Fatalf("service file still exists after uninstall")

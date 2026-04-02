@@ -67,7 +67,7 @@ Runtime dependencies used by `focusd`:
 - `cinnamon-screensaver-command` or `gnome-screensaver-command` for unlock, if your desktop exposes one
 - `notify-send` for desktop notifications
 - `paplay`, `pw-play`, `aplay`, `mpv`, `ffplay`, `cvlc`, or `mpg123` for task-ending sound (`assets/task-ending.mp3`)
-- `focus-events` helper binary (installed alongside `focusd`)
+- `focus-events` helper binary (installed privately with `focusd`)
 
 Environment-specific notes:
 
@@ -143,7 +143,8 @@ Install from local source checkout:
 
 This installs:
 
-- `focus`, `focusd`, and `focus-events` to `~/.local/bin` (by default)
+- `focus` to `~/.local/bin`
+- `focusd` and `focus-events` to `~/.local/libexec/focus`
 - sound assets to `~/.local/share/focus/assets`
 - `focusd.service` to `~/.config/systemd/user/focusd.service`
 

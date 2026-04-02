@@ -305,33 +305,52 @@ func extractReleaseArchive(archivePath, destDir string) error {
 }
 
 func installReleaseBinaries(stageDir, bindir string) error {
-	files := []string{"focus", "focusd", "focus-events"}
+	libexecDir := filepath.Join(filepath.Dir(bindir), "libexec", "focus")
+	files := []struct {
+		name string
+		dest string
+	}{
+		{name: "focus", dest: filepath.Join(bindir, "focus")},
+		{name: "focusd", dest: filepath.Join(libexecDir, "focusd")},
+		{name: "focus-events", dest: filepath.Join(libexecDir, "focus-events")},
+	}
 	if err := os.MkdirAll(bindir, 0o755); err != nil {
 		return fmt.Errorf("create binary dir: %w", err)
 	}
+	if err := os.MkdirAll(libexecDir, 0o755); err != nil {
+		return fmt.Errorf("create libexec dir: %w", err)
+	}
+	for _, stale := range []string{
+		filepath.Join(bindir, "focusd"),
+		filepath.Join(bindir, "focus-events"),
+	} {
+		_ = os.Remove(stale)
+	}
 
 	staged := make(map[string]string, len(files))
-	for _, name := range files {
-		src := filepath.Join(stageDir, name)
+	for _, item := range files {
+		src := filepath.Join(stageDir, item.name)
+		if item.name != "focus" {
+			src = filepath.Join(stageDir, "libexec", "focus", item.name)
+		}
 		if _, err := os.Stat(src); err != nil {
-			return fmt.Errorf("missing release binary %s", name)
+			return fmt.Errorf("missing release binary %s", item.name)
 		}
 
-		dest := filepath.Join(bindir, name)
-		tmpDest, err := copyToTempInDir(src, filepath.Dir(dest), "."+filepath.Base(dest)+".new.", 0o755)
+		tmpDest, err := copyToTempInDir(src, filepath.Dir(item.dest), "."+filepath.Base(item.dest)+".new.", 0o755)
 		if err != nil {
 			return err
 		}
-		staged[name] = tmpDest
+		staged[item.name] = tmpDest
 	}
 
 	replaced := make([]string, 0, len(files))
 	backups := map[string]string{}
 
 	rollback := func() {
-		for _, name := range replaced {
-			dest := filepath.Join(bindir, name)
-			if backup, ok := backups[name]; ok {
+		for _, item := range files {
+			dest := item.dest
+			if backup, ok := backups[item.name]; ok {
 				_ = os.Remove(dest)
 				_ = os.Rename(backup, dest)
 			}
@@ -344,8 +363,8 @@ func installReleaseBinaries(stageDir, bindir string) error {
 		}
 	}
 
-	for _, name := range files {
-		dest := filepath.Join(bindir, name)
+	for _, item := range files {
+		dest := item.dest
 		if _, err := os.Stat(dest); err == nil {
 			backup, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".bak.")
 			if err != nil {
@@ -362,15 +381,15 @@ func installReleaseBinaries(stageDir, bindir string) error {
 				rollback()
 				return fmt.Errorf("backup %s: %w", dest, err)
 			}
-			backups[name] = backupPath
+			backups[item.name] = backupPath
 		}
 
-		if err := os.Rename(staged[name], dest); err != nil {
+		if err := os.Rename(staged[item.name], dest); err != nil {
 			rollback()
 			return fmt.Errorf("replace %s: %w", dest, err)
 		}
-		replaced = append(replaced, name)
-		delete(staged, name)
+		replaced = append(replaced, item.name)
+		delete(staged, item.name)
 	}
 
 	for _, backup := range backups {

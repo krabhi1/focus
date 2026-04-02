@@ -72,19 +72,27 @@ func removeUserService() error {
 }
 
 func removeInstalledBinaries(bindir string) error {
-	files := []string{
+	prefix := filepath.Dir(bindir)
+	for _, file := range []string{
 		filepath.Join(bindir, "focus"),
 		filepath.Join(bindir, "focusd"),
 		filepath.Join(bindir, "focus-events"),
-	}
-
-	for _, file := range files {
+	} {
 		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove %s: %w", file, err)
 		}
 	}
-
-	prefix := filepath.Dir(bindir)
+	libexecDir := filepath.Join(prefix, "libexec", "focus")
+	for _, file := range []string{
+		filepath.Join(libexecDir, "focusd"),
+		filepath.Join(libexecDir, "focus-events"),
+	} {
+		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", file, err)
+		}
+	}
+	_ = os.Remove(libexecDir)
+	_ = os.Remove(filepath.Join(prefix, "libexec"))
 	assetsDir := filepath.Join(prefix, "share", "focus", "assets")
 	if err := os.RemoveAll(assetsDir); err != nil {
 		return fmt.Errorf("remove assets directory: %w", err)

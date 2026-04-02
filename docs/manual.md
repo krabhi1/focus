@@ -10,7 +10,7 @@ Focus has two user-facing binaries:
 - `focusd`: the background daemon
 - `focus`: the CLI client
 
-The daemon owns runtime flow, deadline scheduling, screen lock actions, notifications, and the `focus-events` helper.
+The daemon owns runtime flow, deadline scheduling, screen lock actions, notifications, and the private `focus-events` helper.
 The client sends commands to the daemon over the Unix socket.
 
 Current architecture:
@@ -532,7 +532,7 @@ Check the config file and look for errors like:
 
 ### Missing helper binary
 
-If daemon events do not appear, verify `focus-events` is installed and on `PATH`:
+If daemon events do not appear, verify `focus-events` is installed alongside the daemon in `~/.local/libexec/focus` (or your chosen prefix):
 
 ```bash
 focus doctor
