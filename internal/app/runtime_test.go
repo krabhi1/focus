@@ -115,6 +115,37 @@ func TestRuntimeStartTaskAndCancel(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatusRepairsMissingNoTaskTracking(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 13, 12, 0, 0, 0, time.UTC)}
+	rt.SetClockForTest(clock)
+
+	rt.mu.Lock()
+	rt.noTaskSince = time.Time{}
+	rt.stopNoTaskTimersLocked()
+	rt.mu.Unlock()
+
+	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
+		t.Fatalf("status = %q, want idle countdown", got)
+	}
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.noTaskSince.IsZero() {
+		t.Fatal("noTaskSince = zero, want repaired timestamp")
+	}
+}
+
 func TestRuntimeCancelTaskGraceWindow(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
@@ -147,6 +178,45 @@ func TestRuntimeCancelTaskGraceWindow(t *testing.T) {
 	clock2.Advance(61 * time.Second)
 	if _, err := rt2.CancelCurrentTask(); err == nil {
 		t.Fatal("expected cancel to fail after 1m grace window")
+	}
+}
+
+func TestRuntimeStatusReArmsAfterScreenUnlock(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 13, 13, 0, 0, 0, time.UTC)}
+	rt.SetClockForTest(clock)
+
+	rt.SetSystemLocked(true)
+	rt.OnScreenLocked()
+
+	rt.mu.Lock()
+	if !rt.noTaskSince.IsZero() {
+		rt.mu.Unlock()
+		t.Fatal("noTaskSince after lock = non-zero, want cleared")
+	}
+	rt.mu.Unlock()
+
+	rt.SetSystemLocked(false)
+	rt.OnScreenUnlocked()
+
+	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
+		t.Fatalf("status after unlock = %q, want idle countdown", got)
+	}
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.noTaskSince.IsZero() {
+		t.Fatal("noTaskSince after unlock = zero, want repaired timestamp")
 	}
 }
 
@@ -448,6 +518,9 @@ func TestRuntimeCooldownTransitionsFromPendingToActiveToIdle(t *testing.T) {
 	}
 
 	waitForPhase(domain.PhaseIdle, 1*time.Second)
+	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
+		t.Fatalf("status after cooldown = %q, want idle countdown", got)
+	}
 }
 
 func TestRuntimePausesAndResumesTaskOnSleep(t *testing.T) {

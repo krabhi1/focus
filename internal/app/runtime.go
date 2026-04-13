@@ -198,8 +198,9 @@ func (r *Runtime) CancelCurrentTask() (*domain.Task, error) {
 
 func (r *Runtime) Status() string {
 	r.mu.Lock()
-	snapshot := r.state
 	now := r.clock.Now()
+	r.ensureNoTaskTrackingLocked(now)
+	snapshot := r.state
 	noTaskSince := r.noTaskSince
 	r.mu.Unlock()
 
@@ -211,6 +212,19 @@ func (r *Runtime) Status() string {
 		return fmt.Sprintf("No task active | Lock in: %s", remaining.Round(time.Second))
 	}
 	return status.Render(snapshot, now)
+}
+
+func (r *Runtime) ensureNoTaskTrackingLocked(now time.Time) {
+	cfg := storage.GetRuntimeConfig()
+	if cfg.IdleLockAfter <= 0 {
+		return
+	}
+	if r.current != nil || r.systemLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
+		return
+	}
+	if r.noTaskSince.IsZero() || !r.hasDeadlineLocked("no_task_warn") || !r.hasDeadlineLocked("no_task_lock") {
+		r.armNoTaskTimersLocked(now)
+	}
 }
 
 func (r *Runtime) DebugString() string {
@@ -682,21 +696,11 @@ func (r *Runtime) lockNoTaskStillActive(noTaskSince time.Time) {
 }
 
 func (r *Runtime) resumeNoTaskTrackingIfNeededLocked(now time.Time) {
-	if r.current != nil || r.systemLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
-		return
-	}
-	if r.noTaskSince.IsZero() || !r.hasDeadlineLocked("no_task_warn") || !r.hasDeadlineLocked("no_task_lock") {
-		r.armNoTaskTimersLocked(now)
-	}
+	r.ensureNoTaskTrackingLocked(now)
 }
 
 func (r *Runtime) resumeNoTaskTrackingAfterCooldownLocked(now time.Time) {
-	if r.current != nil || r.systemLocked {
-		return
-	}
-	if r.noTaskSince.IsZero() || !r.hasDeadlineLocked("no_task_warn") || !r.hasDeadlineLocked("no_task_lock") {
-		r.armNoTaskTimersLocked(now)
-	}
+	r.ensureNoTaskTrackingLocked(now)
 }
 
 func (r *Runtime) stopNoTaskTimersLocked() {
