@@ -66,6 +66,7 @@ cp -r "$ROOT_DIR/assets/." "$PREFIX/share/focus/assets/"
 
 echo "Installed binaries to $BINDIR"
 echo "Installed private runtime files to $LIBEXECDIR"
+echo "Installed assets to $PREFIX/share/focus/assets"
 
 if [[ "$NO_SYSTEMD" -eq 1 ]]; then
   echo "Skipping systemd user service setup (--no-systemd)"

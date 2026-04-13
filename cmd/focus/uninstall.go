@@ -86,6 +86,7 @@ func removeUserService() error {
 	if err := os.Remove(servicePath); err != nil {
 		return fmt.Errorf("remove service file: %w", err)
 	}
+	fmt.Printf("Removed systemd user unit %s\n", servicePath)
 
 	if runtime.GOOS == "linux" {
 		_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
@@ -106,6 +107,8 @@ func removeInstalledBinaries(bindir string) error {
 			return fmt.Errorf("remove %s: %w", file, err)
 		}
 	}
+	fmt.Printf("Removed binaries from %s\n", bindir)
+
 	libexecDir := filepath.Join(prefix, "libexec", "focus")
 	for _, file := range []string{
 		filepath.Join(libexecDir, "focusd"),
@@ -115,12 +118,14 @@ func removeInstalledBinaries(bindir string) error {
 			return fmt.Errorf("remove %s: %w", file, err)
 		}
 	}
+	fmt.Printf("Removed private runtime files from %s\n", libexecDir)
 	_ = os.Remove(libexecDir)
 	_ = os.Remove(filepath.Join(prefix, "libexec"))
 	assetsDir := filepath.Join(prefix, "share", "focus", "assets")
 	if err := os.RemoveAll(assetsDir); err != nil {
 		return fmt.Errorf("remove assets directory: %w", err)
 	}
+	fmt.Printf("Removed assets from %s\n", assetsDir)
 
 	_ = os.Remove(filepath.Join(prefix, "share", "focus"))
 

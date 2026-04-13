@@ -56,4 +56,6 @@ if [[ -d "$PREFIX/share/focus" ]] && [[ -z "$(ls -A "$PREFIX/share/focus" 2>/dev
   rmdir "$PREFIX/share/focus" || true
 fi
 echo "Removed binaries from $BINDIR"
+echo "Removed private runtime files from $LIBEXECDIR"
+echo "Removed assets from $PREFIX/share/focus/assets"
 rm -rf "$LIBEXECDIR"

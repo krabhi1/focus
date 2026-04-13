@@ -126,6 +126,7 @@ if [[ -d "$extracted_dir/assets" ]]; then
 fi
 echo "Installed binaries to $BINDIR"
 echo "Installed private runtime files to $LIBEXECDIR"
+echo "Installed assets to $PREFIX/share/focus/assets"
 
 if [[ "$NO_SYSTEMD" -eq 1 ]]; then
   echo "Skipping systemd setup (--no-systemd)"
