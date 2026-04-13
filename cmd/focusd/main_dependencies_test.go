@@ -104,9 +104,12 @@ func TestIsHelperFatalError(t *testing.T) {
 func TestMonitorHelperErrorsCancelsOnFatal(t *testing.T) {
 	errCh := make(chan error, 2)
 	helperFatal := make(chan error, 1)
-	cancelled := false
+	cancelled := make(chan struct{}, 1)
 	cancel := func() {
-		cancelled = true
+		select {
+		case cancelled <- struct{}{}:
+		default:
+		}
 	}
 
 	go monitorHelperErrors(errCh, cancel, helperFatal)
@@ -124,7 +127,9 @@ func TestMonitorHelperErrorsCancelsOnFatal(t *testing.T) {
 		t.Fatal("timed out waiting for helper fatal error")
 	}
 
-	if !cancelled {
+	select {
+	case <-cancelled:
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected cancel to be called for fatal helper error")
 	}
 }

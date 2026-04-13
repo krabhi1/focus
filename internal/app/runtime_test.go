@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -70,6 +72,42 @@ func (r *soundRecorder) Count() int {
 	return len(r.plays)
 }
 
+type lockRecorder struct {
+	mu    sync.Mutex
+	locks int
+}
+
+func (r *lockRecorder) LockScreen() {
+	r.mu.Lock()
+	r.locks++
+	r.mu.Unlock()
+}
+
+func (r *lockRecorder) UnlockScreen()         {}
+func (r *lockRecorder) Notify(string, string) {}
+func (r *lockRecorder) PlaySound(string)       {}
+
+func (r *lockRecorder) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.locks
+}
+
+func captureRuntimeLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	})
+	return &buf
+}
+
 func TestRuntimeStartTaskAndCancel(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.TaskShort = 50 * time.Millisecond
@@ -115,7 +153,107 @@ func TestRuntimeStartTaskAndCancel(t *testing.T) {
 	}
 }
 
-func TestRuntimeStatusRepairsMissingNoTaskTracking(t *testing.T) {
+func TestRuntimeTraceLogsTaskStart(t *testing.T) {
+	buf := captureRuntimeLogs(t)
+
+	rt := NewRuntime(effects.NoopActions{})
+	rt.SetTraceForTest(true)
+	t.Cleanup(rt.Close)
+
+	if _, err := rt.StartTask("demo", 30*time.Minute, false); err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "state change event=task_started") {
+		t.Fatalf("log output = %q, want task_started trace", got)
+	}
+	if !strings.Contains(got, "before={phase=idle") || !strings.Contains(got, "after={phase=active") {
+		t.Fatalf("log output = %q, want phase transition snapshots", got)
+	}
+	if !strings.Contains(got, "current_task=none") || !strings.Contains(got, "current_task=[1] demo") {
+		t.Fatalf("log output = %q, want current task transition snapshots", got)
+	}
+}
+
+func TestRuntimeTraceLogsCooldownCompletion(t *testing.T) {
+	buf := captureRuntimeLogs(t)
+
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.CompletionAlertRepeatCount = 0
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)}
+	rt := NewRuntime(effects.NoopActions{})
+	rt.SetTraceForTest(true)
+	rt.SetClockForTest(clock)
+	t.Cleanup(rt.Close)
+
+	rt.mu.Lock()
+	rt.state = domain.State{
+		Phase:              domain.PhaseCooldown,
+		CooldownUntil:      clock.Now().Add(-time.Second),
+		CooldownDuration:   2 * time.Minute,
+		CooldownStartUntil: time.Time{},
+	}
+	rt.current = nil
+	rt.noTaskSince = time.Time{}
+	rt.mu.Unlock()
+
+	rt.finishCooldown()
+
+	got := buf.String()
+	if !strings.Contains(got, "state change event=cooldown_complete") {
+		t.Fatalf("log output = %q, want cooldown_complete trace", got)
+	}
+	if !strings.Contains(got, "before={phase=cooldown") || !strings.Contains(got, "after={phase=idle") {
+		t.Fatalf("log output = %q, want cooldown phase transition snapshots", got)
+	}
+	if !strings.Contains(got, "no_task_since=none") || !strings.Contains(got, "no_task_since=2026-04-13T14:00:00Z") {
+		t.Fatalf("log output = %q, want no_task_since repair trace", got)
+	}
+}
+
+func TestRuntimeCooldownCompletionCancelsRelock(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.RelockDelay = 20 * time.Millisecond
+	cfg.CooldownStartDelay = 1 * time.Millisecond
+	cfg.CompletionAlertRepeatCount = 0
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &lockRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	rt.mu.Lock()
+	rt.state = domain.State{
+		Phase:         domain.PhaseCooldown,
+		ScreenLocked:  true,
+		CooldownUntil: time.Now().Add(50 * time.Millisecond),
+	}
+	rt.mu.Unlock()
+
+	rt.OnScreenUnlocked()
+	rt.finishCooldown()
+
+	time.Sleep(60 * time.Millisecond)
+
+	if got := actions.Count(); got != 0 {
+		t.Fatalf("lock count = %d, want 0 after cooldown completion canceled relock", got)
+	}
+}
+
+func TestRuntimeStatusDoesNotMutateState(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
@@ -133,16 +271,18 @@ func TestRuntimeStatusRepairsMissingNoTaskTracking(t *testing.T) {
 	rt.mu.Lock()
 	rt.noTaskSince = time.Time{}
 	rt.stopNoTaskTimersLocked()
+	before := rt.traceStateSnapshotLocked()
 	rt.mu.Unlock()
 
-	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
-		t.Fatalf("status = %q, want idle countdown", got)
+	if got := rt.Status(); got != "Idle" {
+		t.Fatalf("status = %q, want Idle", got)
 	}
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.noTaskSince.IsZero() {
-		t.Fatal("noTaskSince = zero, want repaired timestamp")
+	after := rt.traceStateSnapshotLocked()
+	if before != after {
+		t.Fatalf("state changed after status read: before=%+v after=%+v", before, after)
 	}
 }
 
@@ -196,7 +336,6 @@ func TestRuntimeStatusReArmsAfterScreenUnlock(t *testing.T) {
 	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 13, 13, 0, 0, 0, time.UTC)}
 	rt.SetClockForTest(clock)
 
-	rt.SetSystemLocked(true)
 	rt.OnScreenLocked()
 
 	rt.mu.Lock()
@@ -206,7 +345,6 @@ func TestRuntimeStatusReArmsAfterScreenUnlock(t *testing.T) {
 	}
 	rt.mu.Unlock()
 
-	rt.SetSystemLocked(false)
 	rt.OnScreenUnlocked()
 
 	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
@@ -321,12 +459,10 @@ func TestRuntimeCompletionAlertRepeatsWhileLockedAndStopsOnUnlock(t *testing.T) 
 		t.Fatalf("plays while unlocked = %d, want 1", got)
 	}
 
-	rt.SetSystemLocked(true)
 	rt.OnScreenLocked()
 	waitForPlays(2, 4*time.Second)
 	beforeUnlock := actions.Count()
 
-	rt.SetSystemLocked(false)
 	rt.OnScreenUnlocked()
 	time.Sleep(40 * time.Millisecond)
 	if got := actions.Count(); got != beforeUnlock {

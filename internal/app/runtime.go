@@ -28,7 +28,6 @@ type Runtime struct {
 	current *domain.Task
 	nextID  int
 
-	systemLocked             bool
 	noTaskSince              time.Time
 	noTaskWarned             bool
 	relockUntil              time.Time
@@ -144,6 +143,7 @@ func (r *Runtime) HistoryCount() int {
 func (r *Runtime) StartTask(title string, duration time.Duration, noBreak bool) (*domain.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	before := r.traceStateSnapshotLocked()
 
 	if err := r.startDecisionLocked(); err != nil {
 		return nil, err
@@ -167,6 +167,7 @@ func (r *Runtime) StartTask(title string, duration time.Duration, noBreak bool) 
 	r.stopNoTaskTimersLocked()
 	r.stopCompletionAlertLocked()
 	r.armTaskTimersLocked(task, noBreak)
+	r.traceStateChangeLocked("task_started", before)
 	r.tracef("task_started id=%d title=%q duration=%s", task.ID, task.Title, task.Duration)
 	return task, nil
 }
@@ -174,6 +175,7 @@ func (r *Runtime) StartTask(title string, duration time.Duration, noBreak bool) 
 func (r *Runtime) CancelCurrentTask() (*domain.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	before := r.traceStateSnapshotLocked()
 
 	if r.current == nil {
 		return nil, fmt.Errorf("no active task to cancel")
@@ -191,6 +193,7 @@ func (r *Runtime) CancelCurrentTask() (*domain.Task, error) {
 	r.stopNoTaskTimersLocked()
 	r.relockUntil = time.Time{}
 	r.stopCompletionAlertLocked()
+	r.traceStateChangeLocked("task_cancelled", before)
 	r.tracef("task_cancelled id=%d title=%q", task.ID, task.Title)
 	r.resumeNoTaskTrackingIfNeededLocked(r.clock.Now())
 	return task, nil
@@ -199,12 +202,11 @@ func (r *Runtime) CancelCurrentTask() (*domain.Task, error) {
 func (r *Runtime) Status() string {
 	r.mu.Lock()
 	now := r.clock.Now()
-	r.ensureNoTaskTrackingLocked(now)
 	snapshot := r.state
 	noTaskSince := r.noTaskSince
 	r.mu.Unlock()
 
-	if snapshot.Phase == domain.PhaseIdle && snapshot.CurrentTask == nil && !noTaskSince.IsZero() && !r.systemLocked {
+	if snapshot.Phase == domain.PhaseIdle && snapshot.CurrentTask == nil && !noTaskSince.IsZero() && !snapshot.ScreenLocked {
 		remaining := storage.GetRuntimeConfig().IdleLockAfter - r.clock.Since(noTaskSince)
 		if remaining < 0 {
 			remaining = 0
@@ -214,12 +216,84 @@ func (r *Runtime) Status() string {
 	return status.Render(snapshot, now)
 }
 
+type traceStateSnapshot struct {
+	phase                    domain.Phase
+	currentTask              string
+	screenLocked             bool
+	breakUntil               time.Time
+	cooldownStartUntil       time.Time
+	cooldownUntil            time.Time
+	relockUntil              time.Time
+	noTaskSince              time.Time
+	taskPaused               bool
+	completionAlertActive    bool
+	completionAlertRemaining int
+}
+
+func (r *Runtime) traceStateSnapshotLocked() traceStateSnapshot {
+	return traceStateSnapshot{
+		phase:                    r.state.Phase,
+		currentTask:              taskTraceLabel(r.current),
+		screenLocked:             r.state.ScreenLocked,
+		breakUntil:               r.state.BreakUntil,
+		cooldownStartUntil:       r.state.CooldownStartUntil,
+		cooldownUntil:            r.state.CooldownUntil,
+		relockUntil:              r.relockUntil,
+		noTaskSince:              r.noTaskSince,
+		taskPaused:               r.taskPaused,
+		completionAlertActive:    r.completionAlertActive,
+		completionAlertRemaining: r.completionAlertRemaining,
+	}
+}
+
+func (s traceStateSnapshot) String() string {
+	return fmt.Sprintf(
+		"phase=%s current_task=%s screen_locked=%t break_until=%s cooldown_start_until=%s cooldown_until=%s relock_until=%s no_task_since=%s task_paused=%t completion_alert_active=%t completion_alert_remaining=%d",
+		s.phase,
+		s.currentTask,
+		s.screenLocked,
+		formatTraceTime(s.breakUntil),
+		formatTraceTime(s.cooldownStartUntil),
+		formatTraceTime(s.cooldownUntil),
+		formatTraceTime(s.relockUntil),
+		formatTraceTime(s.noTaskSince),
+		s.taskPaused,
+		s.completionAlertActive,
+		s.completionAlertRemaining,
+	)
+}
+
+func (r *Runtime) traceStateChangeLocked(event string, before traceStateSnapshot) {
+	if !r.trace {
+		return
+	}
+	after := r.traceStateSnapshotLocked()
+	if before == after {
+		return
+	}
+	r.tracef("state change event=%s before={%s} after={%s}", event, before.String(), after.String())
+}
+
+func formatTraceTime(t time.Time) string {
+	if t.IsZero() {
+		return "none"
+	}
+	return t.Format(time.RFC3339Nano)
+}
+
+func taskTraceLabel(task *domain.Task) string {
+	if task == nil {
+		return "none"
+	}
+	return fmt.Sprintf("[%d] %s", task.ID, task.Title)
+}
+
 func (r *Runtime) ensureNoTaskTrackingLocked(now time.Time) {
 	cfg := storage.GetRuntimeConfig()
 	if cfg.IdleLockAfter <= 0 {
 		return
 	}
-	if r.current != nil || r.systemLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
+	if r.current != nil || r.state.ScreenLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
 		return
 	}
 	if r.noTaskSince.IsZero() || !r.hasDeadlineLocked("no_task_warn") || !r.hasDeadlineLocked("no_task_lock") {
@@ -237,7 +311,7 @@ func (r *Runtime) DebugString() string {
 
 	fmt.Fprintf(&b, "now: %s\n", now.Format(time.RFC3339Nano))
 	fmt.Fprintf(&b, "phase: %s\n", r.state.Phase)
-	fmt.Fprintf(&b, "screen_locked: %t\n", r.systemLocked)
+	fmt.Fprintf(&b, "screen_locked: %t\n", r.state.ScreenLocked)
 	fmt.Fprintf(&b, "no_task_since: %s\n", formatDebugTime(r.noTaskSince))
 	fmt.Fprintf(&b, "no_task_warned: %t\n", r.noTaskWarned)
 	fmt.Fprintf(&b, "relock_until: %s\n", formatDebugTime(r.relockUntil))
@@ -288,12 +362,6 @@ func (r *Runtime) DebugString() string {
 	return b.String()
 }
 
-func (r *Runtime) SetSystemLocked(locked bool) {
-	r.mu.Lock()
-	r.systemLocked = locked
-	r.mu.Unlock()
-}
-
 func (r *Runtime) OnSleepPrepared() {
 	r.mu.Lock()
 	r.pauseCurrentTaskTimersLocked()
@@ -308,6 +376,7 @@ func (r *Runtime) OnSleepResumed() {
 
 func (r *Runtime) OnScreenLocked() {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	r.cancelDeadlineLocked("relock")
 	r.relockUntil = time.Time{}
 	r.stopNoTaskTimersLocked()
@@ -315,18 +384,22 @@ func (r *Runtime) OnScreenLocked() {
 	r.noTaskWarned = false
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventScreenLocked, At: r.clock.Now()}).State
 	r.resumeCompletionAlertIfNeededLocked()
+	r.traceStateChangeLocked("screen_locked", before)
 	r.mu.Unlock()
 }
 
 func (r *Runtime) OnScreenUnlocked() {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	r.stopCompletionAlertLocked()
 	now := r.clock.Now()
+	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventScreenUnlock, At: now}).State
 	snap := r.state
 	cfg := storage.GetRuntimeConfig()
 
 	if r.current == nil {
 		if snap.Phase == domain.PhasePendingCooldown {
+			r.traceStateChangeLocked("screen_unlocked", before)
 			r.mu.Unlock()
 			return
 		}
@@ -337,18 +410,19 @@ func (r *Runtime) OnScreenUnlocked() {
 			r.scheduleDeadlineLocked("relock", now.Add(relockDelay), func() {
 				r.lockScreen()
 			})
+			r.traceStateChangeLocked("screen_unlocked", before)
 			r.mu.Unlock()
 			r.notify("Cooldown Active", fmt.Sprintf("Cooldown active. Locking again in %s.", relockDelay.Round(time.Second)))
 			return
 		}
 		r.resumeNoTaskTrackingIfNeededLocked(now)
-		r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventScreenUnlock, At: now}).State
+		r.traceStateChangeLocked("screen_unlocked", before)
 		r.mu.Unlock()
 		return
 	}
 
 	if snap.Phase != domain.PhaseBreak {
-		r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventScreenUnlock, At: now}).State
+		r.traceStateChangeLocked("screen_unlocked", before)
 		r.mu.Unlock()
 		return
 	}
@@ -360,7 +434,7 @@ func (r *Runtime) OnScreenUnlocked() {
 	r.scheduleDeadlineLocked("relock", now.Add(relockDelay), func() {
 		r.relockIfBreak()
 	})
-	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventScreenUnlock, At: now}).State
+	r.traceStateChangeLocked("screen_unlocked", before)
 	r.mu.Unlock()
 
 	if notifyUser {
@@ -369,6 +443,7 @@ func (r *Runtime) OnScreenUnlocked() {
 }
 
 func (r *Runtime) pauseCurrentTaskTimersLocked() {
+	before := r.traceStateSnapshotLocked()
 	if r.current == nil || r.taskPaused || r.state.Phase != domain.PhaseActive {
 		return
 	}
@@ -399,9 +474,11 @@ func (r *Runtime) pauseCurrentTaskTimersLocked() {
 	r.cancelDeadlineLocked("break_warn")
 	r.cancelDeadlineLocked("break_start")
 	r.tracef("task_paused id=%d title=%q", task.ID, task.Title)
+	r.traceStateChangeLocked("task_paused", before)
 }
 
 func (r *Runtime) resumePausedTaskTimersLocked() {
+	before := r.traceStateSnapshotLocked()
 	if r.current == nil || !r.taskPaused || r.state.Phase != domain.PhaseActive || r.current.ID != r.taskPauseTaskID {
 		return
 	}
@@ -427,6 +504,7 @@ func (r *Runtime) resumePausedTaskTimersLocked() {
 	}
 
 	r.clearPausedTaskLocked()
+	r.traceStateChangeLocked("task_resumed", before)
 	r.tracef("task_resumed id=%d title=%q", task.ID, task.Title)
 }
 
@@ -463,6 +541,7 @@ func (r *Runtime) armTaskTimersLocked(task *domain.Task, noBreak bool) {
 
 func (r *Runtime) completeCurrentTask(taskID int) {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	if r.current == nil || r.current.ID != taskID {
 		r.mu.Unlock()
 		return
@@ -480,6 +559,7 @@ func (r *Runtime) completeCurrentTask(taskID int) {
 	r.scheduleDeadlineLocked("cooldown_start", cooldownStartAt, func() {
 		r.beginCooldown()
 	})
+	r.traceStateChangeLocked("task_completed", before)
 	r.mu.Unlock()
 
 	if err := storage.AppendCompletedTask(*task); err != nil {
@@ -490,6 +570,7 @@ func (r *Runtime) completeCurrentTask(taskID int) {
 
 func (r *Runtime) beginCooldown() {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	if r.state.Phase != domain.PhasePendingCooldown {
 		r.mu.Unlock()
 		return
@@ -499,23 +580,27 @@ func (r *Runtime) beginCooldown() {
 	r.scheduleDeadlineLocked("cooldown_end", cooldownEndAt, func() {
 		r.finishCooldown()
 	})
+	r.traceStateChangeLocked("cooldown_start", before)
 	r.mu.Unlock()
 	r.lockScreen()
 }
 
 func (r *Runtime) finishCooldown() {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	if r.state.Phase != domain.PhaseCooldown {
 		r.mu.Unlock()
 		return
 	}
-	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTick, At: r.clock.Now()}).State
+	now := r.clock.Now()
+	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTick, At: now}).State
+	r.cancelDeadlineLocked("relock")
+	r.relockUntil = time.Time{}
+	r.ensureNoTaskTrackingLocked(now)
+	r.traceStateChangeLocked("cooldown_complete", before)
 	r.mu.Unlock()
 
 	r.startCompletionAlert()
-	r.mu.Lock()
-	r.resumeNoTaskTrackingAfterCooldownLocked(r.clock.Now())
-	r.mu.Unlock()
 }
 
 func (r *Runtime) notifyBreakComing(taskID int) {
@@ -532,6 +617,7 @@ func (r *Runtime) notifyBreakComing(taskID int) {
 
 func (r *Runtime) startBreak(taskID int, breakDuration time.Duration) {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	if r.current == nil || r.current.ID != taskID || r.state.Phase != domain.PhaseActive {
 		r.mu.Unlock()
 		return
@@ -542,6 +628,7 @@ func (r *Runtime) startBreak(taskID int, breakDuration time.Duration) {
 	r.scheduleDeadlineLocked("break_end", breakUntil, func() {
 		r.endBreak(taskID)
 	})
+	r.traceStateChangeLocked("break_start", before)
 	r.mu.Unlock()
 	r.notify("Break Started", fmt.Sprintf("Break for %s has started", breakDuration.Round(time.Second)))
 	r.lockScreen()
@@ -549,6 +636,7 @@ func (r *Runtime) startBreak(taskID int, breakDuration time.Duration) {
 
 func (r *Runtime) endBreak(taskID int) {
 	r.mu.Lock()
+	before := r.traceStateSnapshotLocked()
 	if r.current == nil || r.current.ID != taskID || r.state.Phase != domain.PhaseBreak {
 		r.mu.Unlock()
 		return
@@ -557,6 +645,7 @@ func (r *Runtime) endBreak(taskID int) {
 	r.cancelDeadlineLocked("relock")
 	r.relockUntil = time.Time{}
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventBreakEnded, At: r.clock.Now()}).State
+	r.traceStateChangeLocked("break_end", before)
 	r.mu.Unlock()
 	r.unlockScreen()
 	r.notify("Break Complete", "Break period ended. Continue your task.")
@@ -568,7 +657,7 @@ func (r *Runtime) relockIfBreak() {
 		r.mu.Unlock()
 		return
 	}
-	if r.systemLocked {
+	if r.state.ScreenLocked {
 		r.mu.Unlock()
 		return
 	}
@@ -589,7 +678,7 @@ func (r *Runtime) startCompletionAlert() {
 	r.completionAlertToken++
 	r.completionAlertRemaining = repeatCount - 1
 	token := r.completionAlertToken
-	locked := r.systemLocked
+	locked := r.state.ScreenLocked
 	r.mu.Unlock()
 
 	r.playSound("assets/task-ending.mp3")
@@ -620,7 +709,7 @@ func (r *Runtime) scheduleCompletionAlertTickLocked(token uint64) {
 
 func (r *Runtime) runCompletionAlertTick(token uint64) {
 	r.mu.Lock()
-	if token != r.completionAlertToken || !r.completionAlertActive || !r.systemLocked || r.completionAlertRemaining <= 0 {
+	if token != r.completionAlertToken || !r.completionAlertActive || !r.state.ScreenLocked || r.completionAlertRemaining <= 0 {
 		if token == r.completionAlertToken {
 			r.cancelDeadlineLocked("completion_alert")
 		}
@@ -639,7 +728,7 @@ func (r *Runtime) runCompletionAlertTick(token uint64) {
 		r.mu.Unlock()
 		return
 	}
-	if r.systemLocked && shouldRepeat {
+	if r.state.ScreenLocked && shouldRepeat {
 		r.scheduleCompletionAlertTickLocked(token)
 	} else if !shouldRepeat {
 		r.completionAlertActive = false
@@ -667,7 +756,7 @@ func (r *Runtime) armNoTaskTimersLocked(now time.Time) {
 
 func (r *Runtime) notifyNoTaskStillActive(noTaskSince time.Time) {
 	r.mu.Lock()
-	if !r.noTaskSince.Equal(noTaskSince) || r.current != nil || r.systemLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
+	if !r.noTaskSince.Equal(noTaskSince) || r.current != nil || r.state.ScreenLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
 		r.mu.Unlock()
 		return
 	}
@@ -684,7 +773,7 @@ func (r *Runtime) notifyNoTaskStillActive(noTaskSince time.Time) {
 
 func (r *Runtime) lockNoTaskStillActive(noTaskSince time.Time) {
 	r.mu.Lock()
-	if !r.noTaskSince.Equal(noTaskSince) || r.current != nil || r.systemLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
+	if !r.noTaskSince.Equal(noTaskSince) || r.current != nil || r.state.ScreenLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
 		r.mu.Unlock()
 		return
 	}
@@ -696,11 +785,9 @@ func (r *Runtime) lockNoTaskStillActive(noTaskSince time.Time) {
 }
 
 func (r *Runtime) resumeNoTaskTrackingIfNeededLocked(now time.Time) {
+	before := r.traceStateSnapshotLocked()
 	r.ensureNoTaskTrackingLocked(now)
-}
-
-func (r *Runtime) resumeNoTaskTrackingAfterCooldownLocked(now time.Time) {
-	r.ensureNoTaskTrackingLocked(now)
+	r.traceStateChangeLocked("resume_no_task", before)
 }
 
 func (r *Runtime) stopNoTaskTimersLocked() {
@@ -730,7 +817,7 @@ func (r *Runtime) stopCompletionAlertLocked() {
 }
 
 func (r *Runtime) resumeCompletionAlertIfNeededLocked() {
-	if !r.completionAlertActive || !r.systemLocked || r.hasDeadlineLocked("completion_alert") || r.completionAlertRemaining <= 0 {
+	if !r.completionAlertActive || !r.state.ScreenLocked || r.hasDeadlineLocked("completion_alert") || r.completionAlertRemaining <= 0 {
 		return
 	}
 	r.scheduleCompletionAlertTickLocked(r.completionAlertToken)
