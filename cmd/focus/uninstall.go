@@ -20,13 +20,15 @@ func Uninstall(prefix string) error {
 		return err
 	}
 
-	fmt.Printf("%s [y/N]: ", colorPrompt("Uninstall focus"))
-	answer, err := readUninstallConfirmationFn()
-	if err != nil {
-		return err
-	}
-	if answer != "y" && answer != "yes" {
-		return fmt.Errorf("uninstall cancelled")
+	for step := 1; step <= 3; step++ {
+		fmt.Printf("%s (%d/3) [y/N]: ", colorPrompt("Are you sure you want to uninstall focus"), step)
+		answer, err := readUninstallConfirmationFn()
+		if err != nil {
+			return err
+		}
+		if answer != "y" && answer != "yes" {
+			return fmt.Errorf("uninstall cancelled")
+		}
 	}
 
 	if err := removeUserService(); err != nil {

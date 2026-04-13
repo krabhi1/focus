@@ -361,7 +361,7 @@ Flags:
 
 ### `focus uninstall`
 
-Removes the installed binaries and service after a `y/N` confirmation prompt.
+Removes the installed binaries and service after three `y/N` confirmation prompts.
 
 Examples:
 

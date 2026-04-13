@@ -117,7 +117,7 @@ Run the daemon and client from the built binaries:
 - `focus version` prints the installed binary version.
 - `focus update` upgrades to the latest release.
 - `focus update --version v0.1.4` upgrades to a specific release.
-- `focus uninstall` prompts for confirmation before removing the installed binaries and user service.
+- `focus uninstall` asks for confirmation three times before removing the installed binaries and user service.
 - `systemctl --user status focusd.service` checks whether the daemon service is running.
 
 Avoid running `go run cmd/focusd/main.go` directly. Use the package path instead if you want to run from source:

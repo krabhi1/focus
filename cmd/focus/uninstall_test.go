@@ -11,13 +11,20 @@ func TestUninstallRemovesBinariesAndService(t *testing.T) {
 	fixture := setupUninstallFixture(t)
 
 	oldPrompt := readUninstallConfirmationFn
-	readUninstallConfirmationFn = func() (string, error) { return "yes", nil }
+	var prompts int
+	readUninstallConfirmationFn = func() (string, error) {
+		prompts++
+		return "yes", nil
+	}
 	t.Cleanup(func() {
 		readUninstallConfirmationFn = oldPrompt
 	})
 
 	if err := Uninstall(fixture.prefix); err != nil {
 		t.Fatalf("Uninstall returned error: %v", err)
+	}
+	if prompts != 3 {
+		t.Fatalf("confirmation prompts = %d, want 3", prompts)
 	}
 
 	for _, name := range []string{"focus", "focusd", "focus-events"} {
