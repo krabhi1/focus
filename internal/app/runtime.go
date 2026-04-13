@@ -653,6 +653,7 @@ func (r *Runtime) startBreak(taskID int, breakDuration time.Duration) {
 func (r *Runtime) endBreak(taskID int) {
 	r.mu.Lock()
 	before := r.traceStateSnapshotLocked()
+	locked := r.state.ScreenLocked
 	if r.current == nil || r.current.ID != taskID || r.state.Phase != domain.PhaseBreak {
 		r.mu.Unlock()
 		return
@@ -663,7 +664,9 @@ func (r *Runtime) endBreak(taskID int) {
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventBreakEnded, At: r.clock.Now()}).State
 	r.traceStateChangeLocked("break_end", before)
 	r.mu.Unlock()
-	r.playSound("assets/task-ending.mp3")
+	if locked {
+		r.playSound("assets/task-ending.mp3")
+	}
 	r.unlockScreen()
 	r.notify("Break Complete", "Break period ended. Continue your task.")
 }
@@ -691,11 +694,15 @@ func (r *Runtime) startCompletionAlert() {
 		r.mu.Unlock()
 		return
 	}
+	if !r.state.ScreenLocked {
+		r.stopCompletionAlertLocked()
+		r.mu.Unlock()
+		return
+	}
 	r.completionAlertActive = true
 	r.completionAlertToken++
 	r.completionAlertRemaining = repeatCount - 1
 	token := r.completionAlertToken
-	locked := r.state.ScreenLocked
 	r.mu.Unlock()
 
 	r.playSound("assets/task-ending.mp3")
@@ -710,9 +717,7 @@ func (r *Runtime) startCompletionAlert() {
 		r.mu.Unlock()
 		return
 	}
-	if locked {
-		r.scheduleCompletionAlertTickLocked(token)
-	}
+	r.scheduleCompletionAlertTickLocked(token)
 	r.mu.Unlock()
 }
 

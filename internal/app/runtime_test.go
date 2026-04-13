@@ -525,6 +525,7 @@ func TestRuntimeCompletionAlertPlaysOnceWhenCountIsOne(t *testing.T) {
 	rt := NewRuntime(actions)
 	t.Cleanup(rt.Close)
 
+	rt.OnScreenLocked()
 	rt.startCompletionAlert()
 	time.Sleep(40 * time.Millisecond)
 	if got := actions.Count(); got != 1 {
@@ -546,6 +547,7 @@ func TestRuntimeCompletionAlertRepeatsWhileLockedAndStopsOnUnlock(t *testing.T) 
 	rt := NewRuntime(actions)
 	t.Cleanup(rt.Close)
 
+	rt.OnScreenLocked()
 	rt.startCompletionAlert()
 
 	waitForPlays := func(min int, timeout time.Duration) {
@@ -572,6 +574,27 @@ func TestRuntimeCompletionAlertRepeatsWhileLockedAndStopsOnUnlock(t *testing.T) 
 	time.Sleep(40 * time.Millisecond)
 	if got := actions.Count(); got != beforeUnlock {
 		t.Fatalf("plays after screen unlock = %d, want %d", got, beforeUnlock)
+	}
+}
+
+func TestRuntimeCompletionAlertDoesNotStartWhileUnlocked(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.CompletionAlertRepeatCount = 2
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &soundRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	rt.startCompletionAlert()
+	time.Sleep(40 * time.Millisecond)
+	if got := actions.Count(); got != 0 {
+		t.Fatalf("plays while unlocked = %d, want 0", got)
 	}
 }
 
@@ -659,7 +682,7 @@ func TestRuntimeStartTaskSchedulesBreakTimersWhenEnabled(t *testing.T) {
 	t.Fatalf("phase = %s, want break", rt.Snapshot().Phase)
 }
 
-func TestRuntimeBreakEndDoesNotTriggerCompletionAlert(t *testing.T) {
+func TestRuntimeBreakEndDoesNotPlaySoundWhenUnlocked(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.TaskShort = 20 * time.Millisecond
 	cfg.TaskMedium = 40 * time.Millisecond
@@ -694,6 +717,53 @@ func TestRuntimeBreakEndDoesNotTriggerCompletionAlert(t *testing.T) {
 	if task == nil {
 		t.Fatal("task = nil, want task")
 	}
+
+	time.Sleep(40 * time.Millisecond)
+	if got := rt.Snapshot().Phase; got != domain.PhaseActive {
+		t.Fatalf("phase after break end = %s, want active", got)
+	}
+	if got := actions.Count(); got != 0 {
+		t.Fatalf("sound plays after break end = %d, want 0", got)
+	}
+}
+
+func TestRuntimeBreakEndPlaysSoundWhenLocked(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 80 * time.Millisecond
+	cfg.TaskDeep = 120 * time.Millisecond
+	cfg.CooldownShort = 100 * time.Millisecond
+	cfg.CooldownLong = 120 * time.Millisecond
+	cfg.CooldownDeep = 140 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 10 * time.Millisecond
+	cfg.BreakDeepStart = 15 * time.Millisecond
+	cfg.BreakLongDuration = 5 * time.Millisecond
+	cfg.BreakDeepDuration = 5 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownStartDelay = 50 * time.Millisecond
+	cfg.CompletionAlertRepeatCount = 0
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &soundRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	task, err := rt.StartTask("demo", cfg.TaskLong, false)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if task == nil {
+		t.Fatal("task = nil, want task")
+	}
+
+	rt.OnScreenLocked()
 
 	time.Sleep(40 * time.Millisecond)
 	if got := rt.Snapshot().Phase; got != domain.PhaseActive {
