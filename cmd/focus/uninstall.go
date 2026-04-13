@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,10 +12,21 @@ import (
 	"strings"
 )
 
+var readUninstallConfirmationFn = readUninstallConfirmation
+
 func Uninstall(prefix string) error {
 	bindir, err := resolveBinDir(prefix)
 	if err != nil {
 		return err
+	}
+
+	fmt.Printf("%s [y/N]: ", colorPrompt("Uninstall focus"))
+	answer, err := readUninstallConfirmationFn()
+	if err != nil {
+		return err
+	}
+	if answer != "y" && answer != "yes" {
+		return fmt.Errorf("uninstall cancelled")
 	}
 
 	if err := removeUserService(); err != nil {
@@ -25,6 +38,15 @@ func Uninstall(prefix string) error {
 	}
 
 	return nil
+}
+
+func readUninstallConfirmation() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read confirmation: %w", err)
+	}
+	return strings.TrimSpace(strings.ToLower(answer)), nil
 }
 
 func resolveBinDir(prefix string) (string, error) {

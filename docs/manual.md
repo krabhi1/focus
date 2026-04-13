@@ -350,7 +350,7 @@ Flags:
 
 ### `focus uninstall`
 
-Removes the installed binaries and service.
+Removes the installed binaries and service after a `y/N` confirmation prompt.
 
 Examples:
 
