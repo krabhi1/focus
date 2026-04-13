@@ -480,6 +480,53 @@ func TestRuntimeLoadHistoryAndCount(t *testing.T) {
 	}
 }
 
+func TestRuntimeLoadHistorySetsNextIDFromAllHistory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FOCUS_HISTORY_FILE", filepath.Join(dir, "history.jsonl"))
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 3, 29, 12, 0, 0, 0, time.FixedZone("IST", 5*60*60+30*60))}
+
+	yesterday := clock.now.Add(-24 * time.Hour)
+	today := clock.now.Add(-time.Hour)
+
+	if err := storage.AppendCompletedTask(domain.Task{
+		ID:        90,
+		Title:     "old task",
+		Duration:  30 * time.Minute,
+		StartTime: yesterday,
+	}); err != nil {
+		t.Fatalf("append old task: %v", err)
+	}
+	if err := storage.AppendCompletedTask(domain.Task{
+		ID:        1,
+		Title:     "today task",
+		Duration:  30 * time.Minute,
+		StartTime: today,
+	}); err != nil {
+		t.Fatalf("append today task: %v", err)
+	}
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+	rt.SetClockForTest(clock)
+
+	if err := rt.LoadHistoryFromDisk(); err != nil {
+		t.Fatalf("LoadHistoryFromDisk returned error: %v", err)
+	}
+
+	if got := rt.HistoryCount(); got != 1 {
+		t.Fatalf("HistoryCount = %d, want 1 today task", got)
+	}
+
+	task, err := rt.StartTask("new task", 5*time.Minute, false)
+	if err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+	if got := task.ID; got != 91 {
+		t.Fatalf("new task ID = %d, want 91", got)
+	}
+}
+
 func TestRuntimeDebugStringIncludesStateAndConfig(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.CompletionAlertRepeatCount = 2

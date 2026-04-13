@@ -107,18 +107,25 @@ func (r *Runtime) Now() time.Time {
 }
 
 func (r *Runtime) LoadHistoryFromDisk() error {
-	tasks, err := storage.LoadTodayHistory()
+	entries, err := storage.LoadAllHistory()
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.history = append([]domain.Task(nil), tasks...)
+	now := r.clock.Now()
+	todayStart := startOfToday(now)
+	todayEnd := todayStart.Add(24 * time.Hour)
+	r.history = r.history[:0]
 	r.nextID = 1
-	for _, t := range r.history {
-		if t.ID >= r.nextID {
-			r.nextID = t.ID + 1
+	for _, entry := range entries {
+		if entry.Task.ID >= r.nextID {
+			r.nextID = entry.Task.ID + 1
 		}
+		if entry.Task.StartTime.Before(todayStart) || !entry.Task.StartTime.Before(todayEnd) {
+			continue
+		}
+		r.history = append(r.history, entry.Task)
 	}
 	r.tracef("history_loaded count=%d", len(r.history))
 	return nil
