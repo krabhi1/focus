@@ -171,6 +171,7 @@ func run() error {
 		return err
 	}
 	warnMissingRuntimeDependencies(exec.LookPath)
+	logStartupVersion()
 
 	resolvedConfigPath, err := resolveConfigPath(*configPath)
 	if err != nil {
@@ -242,6 +243,10 @@ func run() error {
 	default:
 		return nil
 	}
+}
+
+func logStartupVersion() {
+	log.Printf("Focus daemon version %s", strings.TrimSpace(version))
 }
 
 func (f runtimeFlagSet) toOverrides() storage.Overrides {

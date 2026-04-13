@@ -14,7 +14,7 @@ build:
 	@echo "Building $(BINARY_NAME), $(DAEMON_NAME), and $(EVENTS_NAME)..."
 	@mkdir -p $(DIST_DIR)
 	@go build -ldflags="-X main.version=$(BINARY_VERSION)" -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/focus
-	@go build -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/focusd
+	@go build -ldflags="-X main.version=$(BINARY_VERSION)" -o $(DIST_DIR)/$(DAEMON_NAME) ./cmd/focusd
 	@native_flags="$$(pkg-config --cflags --libs libsystemd)"; \
 		gcc -Wall -Wextra -O2 ./native/session_event_listener.c -o $(DIST_DIR)/$(EVENTS_NAME) $$native_flags
 

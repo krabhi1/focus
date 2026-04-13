@@ -79,7 +79,7 @@ for target in "${target_array[@]}"; do
 
   echo "Building focus and focusd for $goos/$goarch..."
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$pkg_dir/focus" "$ROOT_DIR/cmd/focus"
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$pkg_dir/libexec/focus/focusd" "$ROOT_DIR/cmd/focusd"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$pkg_dir/libexec/focus/focusd" "$ROOT_DIR/cmd/focusd"
 
   if [[ "$goos" != "$HOST_GOOS" || "$goarch" != "$HOST_GOARCH" ]]; then
     echo "focus-events native helper currently requires native gcc/libs; cross-build unsupported for $goos/$goarch" >&2
