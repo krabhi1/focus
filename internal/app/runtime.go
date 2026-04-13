@@ -288,6 +288,17 @@ func taskTraceLabel(task *domain.Task) string {
 	return fmt.Sprintf("[%d] %s", task.ID, task.Title)
 }
 
+func taskEndActionForDuration(duration time.Duration) string {
+	cfg := storage.GetRuntimeConfig()
+	if duration >= cfg.TaskDeep {
+		return cfg.TaskDeepEndAction
+	}
+	if duration >= cfg.TaskLong {
+		return cfg.TaskLongEndAction
+	}
+	return storage.TaskEndActionLock
+}
+
 func (r *Runtime) ensureNoTaskTrackingLocked(now time.Time) {
 	cfg := storage.GetRuntimeConfig()
 	if cfg.IdleLockAfter <= 0 {
@@ -556,8 +567,9 @@ func (r *Runtime) completeCurrentTask(taskID int) {
 	cooldownDuration := cooldownDurationFor(task.Duration, cfg)
 	cooldownStartAt := now.Add(cfg.CooldownStartDelay)
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventTaskCompleted, At: now, CooldownStartAt: cooldownStartAt, CooldownDuration: cooldownDuration}).State
+	endAction := taskEndActionForDuration(task.Duration)
 	r.scheduleDeadlineLocked("cooldown_start", cooldownStartAt, func() {
-		r.beginCooldown()
+		r.beginCooldown(endAction)
 	})
 	r.traceStateChangeLocked("task_completed", before)
 	r.mu.Unlock()
@@ -568,7 +580,7 @@ func (r *Runtime) completeCurrentTask(taskID int) {
 	r.notify("Task Complete", fmt.Sprintf("'%s' has finished. Cooldown starts in %s", task.Title, cfg.CooldownStartDelay.Round(time.Second)))
 }
 
-func (r *Runtime) beginCooldown() {
+func (r *Runtime) beginCooldown(endAction string) {
 	r.mu.Lock()
 	before := r.traceStateSnapshotLocked()
 	if r.state.Phase != domain.PhasePendingCooldown {
@@ -582,6 +594,10 @@ func (r *Runtime) beginCooldown() {
 	})
 	r.traceStateChangeLocked("cooldown_start", before)
 	r.mu.Unlock()
+	if endAction == storage.TaskEndActionSleep {
+		r.sleep()
+		return
+	}
 	r.lockScreen()
 }
 
@@ -647,6 +663,7 @@ func (r *Runtime) endBreak(taskID int) {
 	r.state = domain.Reduce(r.state, domain.Event{Type: domain.EventBreakEnded, At: r.clock.Now()}).State
 	r.traceStateChangeLocked("break_end", before)
 	r.mu.Unlock()
+	r.playSound("assets/task-ending.mp3")
 	r.unlockScreen()
 	r.notify("Break Complete", "Break period ended. Continue your task.")
 }
@@ -863,6 +880,11 @@ func (r *Runtime) hasDeadlineLocked(name string) bool {
 func (r *Runtime) lockScreen() {
 	r.tracef("action lock_screen")
 	r.actions.LockScreen()
+}
+
+func (r *Runtime) sleep() {
+	r.tracef("action sleep")
+	r.actions.Sleep()
 }
 
 func (r *Runtime) unlockScreen() {

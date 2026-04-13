@@ -59,6 +59,7 @@ type soundRecorder struct {
 
 func (r *soundRecorder) LockScreen()           {}
 func (r *soundRecorder) UnlockScreen()         {}
+func (r *soundRecorder) Sleep()                {}
 func (r *soundRecorder) Notify(string, string) {}
 func (r *soundRecorder) PlaySound(path string) {
 	r.mu.Lock()
@@ -73,8 +74,9 @@ func (r *soundRecorder) Count() int {
 }
 
 type lockRecorder struct {
-	mu    sync.Mutex
-	locks int
+	mu     sync.Mutex
+	locks  int
+	sleeps int
 }
 
 func (r *lockRecorder) LockScreen() {
@@ -84,13 +86,20 @@ func (r *lockRecorder) LockScreen() {
 }
 
 func (r *lockRecorder) UnlockScreen()         {}
+func (r *lockRecorder) Sleep()                { r.mu.Lock(); r.sleeps++; r.mu.Unlock() }
 func (r *lockRecorder) Notify(string, string) {}
-func (r *lockRecorder) PlaySound(string)       {}
+func (r *lockRecorder) PlaySound(string)      {}
 
 func (r *lockRecorder) Count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.locks
+}
+
+func (r *lockRecorder) SleepCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sleeps
 }
 
 func captureRuntimeLogs(t *testing.T) *bytes.Buffer {
@@ -216,6 +225,102 @@ func TestRuntimeTraceLogsCooldownCompletion(t *testing.T) {
 	}
 	if !strings.Contains(got, "no_task_since=none") || !strings.Contains(got, "no_task_since=2026-04-13T14:00:00Z") {
 		t.Fatalf("log output = %q, want no_task_since repair trace", got)
+	}
+}
+
+func TestRuntimeCooldownStartLocksForLongTasksByDefault(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 10 * time.Millisecond
+	cfg.TaskMedium = 20 * time.Millisecond
+	cfg.TaskLong = 30 * time.Millisecond
+	cfg.TaskDeep = 40 * time.Millisecond
+	cfg.BreakWarning = 1 * time.Millisecond
+	cfg.BreakLongStart = 10 * time.Millisecond
+	cfg.BreakDeepStart = 20 * time.Millisecond
+	cfg.BreakLongDuration = 5 * time.Millisecond
+	cfg.BreakDeepDuration = 5 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 10 * time.Millisecond
+	cfg.CooldownDeep = 10 * time.Millisecond
+	cfg.CooldownStartDelay = 5 * time.Millisecond
+	cfg.CompletionAlertRepeatCount = 0
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &lockRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	if _, err := rt.StartTask("demo", cfg.TaskLong, true); err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(120 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.Count() > 0 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if got := actions.Count(); got != 1 {
+		t.Fatalf("lock count = %d, want 1 for long task cooldown start", got)
+	}
+	if got := actions.SleepCount(); got != 0 {
+		t.Fatalf("sleep count = %d, want 0 for long task cooldown start", got)
+	}
+}
+
+func TestRuntimeCooldownStartSleepsForDeepTasksByDefault(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 10 * time.Millisecond
+	cfg.TaskMedium = 20 * time.Millisecond
+	cfg.TaskLong = 30 * time.Millisecond
+	cfg.TaskDeep = 40 * time.Millisecond
+	cfg.BreakWarning = 1 * time.Millisecond
+	cfg.BreakLongStart = 10 * time.Millisecond
+	cfg.BreakDeepStart = 20 * time.Millisecond
+	cfg.BreakLongDuration = 5 * time.Millisecond
+	cfg.BreakDeepDuration = 5 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 10 * time.Millisecond
+	cfg.CooldownDeep = 10 * time.Millisecond
+	cfg.CooldownStartDelay = 5 * time.Millisecond
+	cfg.CompletionAlertRepeatCount = 0
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	actions := &lockRecorder{}
+	rt := NewRuntime(actions)
+	t.Cleanup(rt.Close)
+
+	if _, err := rt.StartTask("demo", cfg.TaskDeep, true); err != nil {
+		t.Fatalf("StartTask returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(120 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if actions.SleepCount() > 0 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if got := actions.SleepCount(); got != 1 {
+		t.Fatalf("sleep count = %d, want 1 for deep task cooldown start", got)
+	}
+	if got := actions.Count(); got != 0 {
+		t.Fatalf("lock count = %d, want 0 for deep task cooldown start", got)
 	}
 }
 
@@ -594,8 +699,8 @@ func TestRuntimeBreakEndDoesNotTriggerCompletionAlert(t *testing.T) {
 	if got := rt.Snapshot().Phase; got != domain.PhaseActive {
 		t.Fatalf("phase after break end = %s, want active", got)
 	}
-	if got := actions.Count(); got != 0 {
-		t.Fatalf("sound plays after break end = %d, want 0", got)
+	if got := actions.Count(); got != 1 {
+		t.Fatalf("sound plays after break end = %d, want 1", got)
 	}
 }
 

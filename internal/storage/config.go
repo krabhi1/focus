@@ -23,10 +23,12 @@ type File struct {
 }
 
 type taskJSON struct {
-	Short  string `json:"short"`
-	Medium string `json:"medium"`
-	Long   string `json:"long"`
-	Deep   string `json:"deep"`
+	Short         string `json:"short"`
+	Medium        string `json:"medium"`
+	Long          string `json:"long"`
+	Deep          string `json:"deep"`
+	LongEndAction string `json:"long_end_action"`
+	DeepEndAction string `json:"deep_end_action"`
 }
 
 type cooldownJSON struct {
@@ -53,10 +55,12 @@ type alertJSON struct {
 }
 
 type Overrides struct {
-	TaskShort  *time.Duration
-	TaskMedium *time.Duration
-	TaskLong   *time.Duration
-	TaskDeep   *time.Duration
+	TaskShort         *time.Duration
+	TaskMedium        *time.Duration
+	TaskLong          *time.Duration
+	TaskDeep          *time.Duration
+	TaskLongEndAction *string
+	TaskDeepEndAction *string
 
 	CooldownShort *time.Duration
 	CooldownLong  *time.Duration
@@ -76,10 +80,12 @@ type Overrides struct {
 }
 
 type RuntimeConfig struct {
-	TaskShort  time.Duration
-	TaskMedium time.Duration
-	TaskLong   time.Duration
-	TaskDeep   time.Duration
+	TaskShort         time.Duration
+	TaskMedium        time.Duration
+	TaskLong          time.Duration
+	TaskDeep          time.Duration
+	TaskLongEndAction string
+	TaskDeepEndAction string
 
 	CooldownShort time.Duration
 	CooldownLong  time.Duration
@@ -104,6 +110,9 @@ const (
 	TaskLongDuration   = 60 * time.Minute
 	TaskDeepDuration   = 90 * time.Minute
 
+	TaskEndActionSleep = "sleep"
+	TaskEndActionLock  = "lock"
+
 	CooldownShortDuration = 5 * time.Minute
 	CooldownLongDuration  = 10 * time.Minute
 	CooldownDeepDuration  = 15 * time.Minute
@@ -127,10 +136,12 @@ var (
 
 func DefaultRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
-		TaskShort:  TaskShortDuration,
-		TaskMedium: TaskMediumDuration,
-		TaskLong:   TaskLongDuration,
-		TaskDeep:   TaskDeepDuration,
+		TaskShort:         TaskShortDuration,
+		TaskMedium:        TaskMediumDuration,
+		TaskLong:          TaskLongDuration,
+		TaskDeep:          TaskDeepDuration,
+		TaskLongEndAction: TaskEndActionLock,
+		TaskDeepEndAction: TaskEndActionSleep,
 
 		CooldownShort: CooldownShortDuration,
 		CooldownLong:  CooldownLongDuration,
@@ -198,6 +209,12 @@ func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 	if cfg.RelockDelay < 0 {
 		return fmt.Errorf("relock_delay must be >= 0")
 	}
+	if !isValidTaskEndAction(cfg.TaskLongEndAction) {
+		return fmt.Errorf("task.long_end_action must be one of %q or %q", TaskEndActionSleep, TaskEndActionLock)
+	}
+	if !isValidTaskEndAction(cfg.TaskDeepEndAction) {
+		return fmt.Errorf("task.deep_end_action must be one of %q or %q", TaskEndActionSleep, TaskEndActionLock)
+	}
 	if !(cfg.TaskShort < cfg.TaskMedium && cfg.TaskMedium < cfg.TaskLong && cfg.TaskLong < cfg.TaskDeep) {
 		return fmt.Errorf("task presets must be strictly increasing: short < medium < long < deep")
 	}
@@ -237,6 +254,8 @@ func SupportedConfigKeys() []string {
 		"task.medium",
 		"task.long",
 		"task.deep",
+		"task.long_end_action",
+		"task.deep_end_action",
 		"cooldown.short",
 		"cooldown.long",
 		"cooldown.deep",
@@ -263,6 +282,10 @@ func DescribeConfigKey(cfg RuntimeConfig, key string) (string, error) {
 		return cfg.TaskLong.String(), nil
 	case "task.deep":
 		return cfg.TaskDeep.String(), nil
+	case "task.long_end_action":
+		return cfg.TaskLongEndAction, nil
+	case "task.deep_end_action":
+		return cfg.TaskDeepEndAction, nil
 	case "cooldown.short":
 		return cfg.CooldownShort.String(), nil
 	case "cooldown.long":
@@ -406,6 +429,12 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	if err := applyDuration(&resolved.TaskDeep, fileCfg.Task.Deep); err != nil {
 		return RuntimeConfig{}, fmt.Errorf("invalid task.deep: %w", err)
 	}
+	if err := applyTaskEndAction(&resolved.TaskLongEndAction, fileCfg.Task.LongEndAction); err != nil {
+		return RuntimeConfig{}, fmt.Errorf("invalid task.long_end_action: %w", err)
+	}
+	if err := applyTaskEndAction(&resolved.TaskDeepEndAction, fileCfg.Task.DeepEndAction); err != nil {
+		return RuntimeConfig{}, fmt.Errorf("invalid task.deep_end_action: %w", err)
+	}
 	if err := applyDuration(&resolved.CooldownShort, fileCfg.Cooldown.Short); err != nil {
 		return RuntimeConfig{}, fmt.Errorf("invalid cooldown.short: %w", err)
 	}
@@ -449,6 +478,8 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	applyOverride(&resolved.TaskMedium, overrides.TaskMedium)
 	applyOverride(&resolved.TaskLong, overrides.TaskLong)
 	applyOverride(&resolved.TaskDeep, overrides.TaskDeep)
+	applyOverrideString(&resolved.TaskLongEndAction, overrides.TaskLongEndAction)
+	applyOverrideString(&resolved.TaskDeepEndAction, overrides.TaskDeepEndAction)
 	applyOverride(&resolved.CooldownShort, overrides.CooldownShort)
 	applyOverride(&resolved.CooldownLong, overrides.CooldownLong)
 	applyOverride(&resolved.CooldownDeep, overrides.CooldownDeep)
@@ -489,6 +520,33 @@ func applyOverrideInt(dst *int, value *int) {
 	}
 }
 
+func applyOverrideString(dst *string, value *string) {
+	if value != nil {
+		*dst = strings.ToLower(strings.TrimSpace(*value))
+	}
+}
+
+func applyTaskEndAction(dst *string, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if !isValidTaskEndAction(normalized) {
+		return fmt.Errorf("must be one of %q or %q", TaskEndActionSleep, TaskEndActionLock)
+	}
+	*dst = normalized
+	return nil
+}
+
+func isValidTaskEndAction(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case TaskEndActionSleep, TaskEndActionLock:
+		return true
+	default:
+		return false
+	}
+}
+
 func applyConfigValue(raw map[string]any, key, rawValue string) error {
 	section, leaf, ok := strings.Cut(key, ".")
 	if !ok {
@@ -512,6 +570,12 @@ func applyConfigValue(raw map[string]any, key, rawValue string) error {
 		switch leaf {
 		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after":
 			sectionMap[leaf] = rawValue
+			return nil
+		case "long_end_action", "deep_end_action":
+			if !isValidTaskEndAction(rawValue) {
+				return fmt.Errorf("task.%s must be one of %q or %q", leaf, TaskEndActionSleep, TaskEndActionLock)
+			}
+			sectionMap[leaf] = strings.ToLower(strings.TrimSpace(rawValue))
 			return nil
 		case "repeat_count":
 			value, err := strconv.Atoi(rawValue)

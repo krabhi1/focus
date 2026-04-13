@@ -48,7 +48,9 @@ Example:
     "short": "15m",
     "medium": "30m",
     "long": "60m",
-    "deep": "90m"
+    "deep": "90m",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5m",
@@ -82,6 +84,8 @@ Task preset durations used by `focus start --duration ...`.
 - `task.medium`: duration for `medium`
 - `task.long`: duration for `long`
 - `task.deep`: duration for `deep`
+- `task.long_end_action`: what `long` tasks do at cooldown start; default `lock`
+- `task.deep_end_action`: what `deep` tasks do at cooldown start; default `sleep`
 
 These must be strictly increasing:
 
@@ -157,6 +161,7 @@ Examples:
 
 - missing or non-positive durations are rejected
 - task presets must be strictly increasing
+- `task.long_end_action` and `task.deep_end_action` must be `sleep` or `lock`
 - break timings must fit inside the task duration
 - idle warn must be less than idle lock
 - alert repeat count must be non-negative
@@ -188,6 +193,8 @@ Common flags:
 - `--task-medium <duration>`: override `task.medium`
 - `--task-long <duration>`: override `task.long`
 - `--task-deep <duration>`: override `task.deep`
+- `--task-long-end-action <sleep|lock>`: override `task.long_end_action`
+- `--task-deep-end-action <sleep|lock>`: override `task.deep_end_action`
 - `--cooldown-short <duration>`: override `cooldown.short`
 - `--cooldown-long <duration>`: override `cooldown.long`
 - `--cooldown-deep <duration>`: override `cooldown.deep`
@@ -297,10 +304,14 @@ Example:
 ```bash
 focus config idle.lock_after
 focus config idle.lock_after 3m
+focus config task.long_end_action
+focus config task.deep_end_action
+focus config task.long_end_action lock
+focus config task.deep_end_action sleep
 ```
 
 Use one argument to read the current value and default. Use two arguments to update the value and reload the daemon.
-The key uses dot notation for nested fields. Supported values are duration strings.
+The key uses dot notation for nested fields. Duration settings use duration strings, and the task end-action fields accept `sleep` or `lock`.
 
 ### `focus doctor`
 
@@ -425,7 +436,9 @@ Typical values are long enough to match real work sessions:
     "short": "15m",
     "medium": "30m",
     "long": "60m",
-    "deep": "90m"
+    "deep": "90m",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5m",
@@ -461,7 +474,9 @@ Use a local `focus.dev.json` when you want to test the full flow quickly:
     "short": "5s",
     "medium": "10s",
     "long": "20s",
-    "deep": "30s"
+    "deep": "30s",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5s",

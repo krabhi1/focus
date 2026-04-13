@@ -22,6 +22,10 @@ Current runtime model:
   - **medium (30 min):** No in-task break.
   - **long (60 min):** Break starts at 25 minutes for 5 minutes.
   - **deep (90 min):** Break starts at 45 minutes for 10 minutes.
+- **Post-Task Action:**
+  - `long` tasks lock the screen at cooldown start by default.
+  - `deep` tasks suspend the machine at cooldown start by default.
+  - Override with `task.long_end_action` or `task.deep_end_action` if you want the opposite behavior.
 - **Break Enforcement (long/deep only):**
   - You get a reminder 2 minutes before the break starts.
   - At break start, Focus locks the screen using the best available session/backend command.
@@ -65,6 +69,7 @@ Runtime dependencies used by `focusd`:
 
 - `loginctl` or `xdg-screensaver` for screen lock
 - `cinnamon-screensaver-command` or `gnome-screensaver-command` for unlock, if your desktop exposes one
+- `systemctl` or `loginctl` for sleep/suspend on long and deep task cooldown start
 - `notify-send` for desktop notifications
 - `paplay`, `pw-play`, `aplay`, `mpv`, `ffplay`, `cvlc`, or `mpg123` for task-ending sound (`assets/task-ending.mp3`)
 - `focus-events` helper binary (installed privately with `focusd`)
@@ -72,6 +77,7 @@ Runtime dependencies used by `focusd`:
 Environment-specific notes:
 
 - Lock and unlock are best-effort and depend on the desktop/session providing a supported command.
+- Sleep is best-effort and uses the first available suspend command for your session.
 - Sound playback is best-effort and uses the first available audio tool.
 - `systemctl --user` is needed only if you use the user service install path.
 
@@ -105,6 +111,8 @@ Run the daemon and client from the built binaries:
 - `focus config <key>` shows the current value and default.
 - `focus config <key> <value>` updates one config value and reloads the daemon.
 - `focus config alert.repeat_count` controls how many times the task-ending sound can play; `0` means no sound.
+- `focus config task.long_end_action` controls whether `long` tasks `sleep` or `lock` when cooldown starts.
+- `focus config task.deep_end_action` controls whether `deep` tasks `sleep` or `lock` when cooldown starts.
 - `focus doctor` prints dependency, socket, daemon IPC, and service health checks.
 - `focus version` prints the installed binary version.
 - `focus update` upgrades to the latest release.

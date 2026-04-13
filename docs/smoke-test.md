@@ -12,7 +12,9 @@ Create `focus.dev.json` in the repo root:
     "short": "5s",
     "medium": "10s",
     "long": "20s",
-    "deep": "30s"
+    "deep": "30s",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5s",

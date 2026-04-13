@@ -81,6 +81,32 @@ func (i *intFlag) Value() (*int, bool) {
 	return &value, true
 }
 
+type stringFlag struct {
+	value string
+	set   bool
+}
+
+func (s *stringFlag) String() string {
+	if s == nil || !s.set {
+		return ""
+	}
+	return s.value
+}
+
+func (s *stringFlag) Set(raw string) error {
+	s.value = strings.TrimSpace(raw)
+	s.set = true
+	return nil
+}
+
+func (s *stringFlag) Value() (*string, bool) {
+	if s == nil || !s.set {
+		return nil, false
+	}
+	value := s.value
+	return &value, true
+}
+
 type runtimeFlagSet struct {
 	taskShort  durationFlag
 	taskMedium durationFlag
@@ -102,7 +128,9 @@ type runtimeFlagSet struct {
 	idleWarnAfter durationFlag
 	idleLockAfter durationFlag
 
-	alertRepeatCount intFlag
+	alertRepeatCount  intFlag
+	taskLongEndAction stringFlag
+	taskDeepEndAction stringFlag
 }
 
 func main() {
@@ -132,6 +160,8 @@ func run() error {
 	flag.Var(&flags.idleWarnAfter, "idle-warn-after", "Override idle.warn_after")
 	flag.Var(&flags.idleLockAfter, "idle-lock-after", "Override idle.lock_after")
 	flag.Var(&flags.alertRepeatCount, "completion-alert-repeat-count", "Override alert.repeat_count")
+	flag.Var(&flags.taskLongEndAction, "task-long-end-action", "Override task.long_end_action")
+	flag.Var(&flags.taskDeepEndAction, "task-deep-end-action", "Override task.deep_end_action")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -267,6 +297,12 @@ func (f runtimeFlagSet) toOverrides() storage.Overrides {
 	if v, ok := f.alertRepeatCount.Value(); ok {
 		overrides.CompletionAlertRepeatCount = v
 	}
+	if v, ok := f.taskLongEndAction.Value(); ok {
+		overrides.TaskLongEndAction = v
+	}
+	if v, ok := f.taskDeepEndAction.Value(); ok {
+		overrides.TaskDeepEndAction = v
+	}
 	return overrides
 }
 
@@ -351,11 +387,13 @@ func traceFlowEnabled() bool {
 
 func logRuntimeConfig(cfg storage.RuntimeConfig) {
 	log.Printf(
-		"runtime config task=[%s,%s,%s,%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] alert=[count:%d]",
+		"runtime config task=[%s,%s,%s,%s long_end:%s deep_end:%s] cooldown=[%s,%s,%s start:%s] break=[start:%s/%s dur:%s/%s warn:%s relock:%s] no-task=[warn:%s lock:%s] alert=[count:%d]",
 		cfg.TaskShort,
 		cfg.TaskMedium,
 		cfg.TaskLong,
 		cfg.TaskDeep,
+		cfg.TaskLongEndAction,
+		cfg.TaskDeepEndAction,
 		cfg.CooldownShort,
 		cfg.CooldownLong,
 		cfg.CooldownDeep,

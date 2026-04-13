@@ -92,6 +92,31 @@ func TestDetectSoundBackendFallsBackToMpv(t *testing.T) {
 	}
 }
 
+func TestDetectSleepBackendPrefersLoginctlWithSession(t *testing.T) {
+	dir := t.TempDir()
+	fakeExecutable(t, dir, "loginctl")
+	fakeExecutable(t, dir, "systemctl")
+
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_SESSION_ID", "session-123")
+
+	if got := detectSleepBackend(); got != "loginctl" {
+		t.Fatalf("detectSleepBackend() = %q, want loginctl", got)
+	}
+}
+
+func TestDetectSleepBackendFallsBackToSystemctl(t *testing.T) {
+	dir := t.TempDir()
+	fakeExecutable(t, dir, "systemctl")
+
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_SESSION_ID", "")
+
+	if got := detectSleepBackend(); got != "systemctl" {
+		t.Fatalf("detectSleepBackend() = %q, want systemctl", got)
+	}
+}
+
 func TestPrintInstalledCommandCheckUsesLibexecPath(t *testing.T) {
 	prefix := t.TempDir()
 	libexecDir := filepath.Join(prefix, "libexec", "focus")

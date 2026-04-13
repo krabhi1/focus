@@ -105,6 +105,8 @@ func printConfigHelp(defaults storage.RuntimeConfig) {
 	fmt.Println("  " + colorInfo("focus config idle.lock_after 3m"))
 	fmt.Println("  " + colorInfo("focus config relock_delay 0s"))
 	fmt.Println("  " + colorInfo("focus config alert.repeat_count 3"))
+	fmt.Println("  " + colorInfo("focus config task.long_end_action lock"))
+	fmt.Println("  " + colorInfo("focus config task.deep_end_action sleep"))
 	fmt.Println("")
 	fmt.Println(colorMuted("Use dot notation for nested keys. Use one argument to read a value."))
 }

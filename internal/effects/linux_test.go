@@ -235,6 +235,59 @@ func TestRealActionsPlaySoundNoopWhenUnavailable(t *testing.T) {
 	}
 }
 
+func TestRealActionsSleepPrefersLoginctlWhenAvailable(t *testing.T) {
+	restore := stubCommandEnv()
+	defer restore()
+
+	t.Setenv("XDG_SESSION_ID", "session-123")
+	calls := []string{}
+	commandLookPath = func(name string) (string, error) {
+		if name != "loginctl" {
+			return "", errors.New("missing")
+		}
+		return "/usr/bin/loginctl", nil
+	}
+	commandRun = func(name string, args ...string) error {
+		calls = append(calls, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		return nil
+	}
+
+	RealActions{}.Sleep()
+
+	if len(calls) != 1 {
+		t.Fatalf("calls = %v, want 1 loginctl call", calls)
+	}
+	if got := calls[0]; got != "loginctl suspend-session session-123" {
+		t.Fatalf("call = %q, want loginctl suspend-session session-123", got)
+	}
+}
+
+func TestRealActionsSleepFallsBackToSystemctl(t *testing.T) {
+	restore := stubCommandEnv()
+	defer restore()
+
+	calls := []string{}
+	commandLookPath = func(name string) (string, error) {
+		if name != "systemctl" {
+			return "", errors.New("missing")
+		}
+		return "/usr/bin/systemctl", nil
+	}
+	commandRun = func(name string, args ...string) error {
+		calls = append(calls, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		return nil
+	}
+
+	RealActions{}.Sleep()
+
+	if len(calls) != 1 {
+		t.Fatalf("calls = %v, want 1 systemctl call", calls)
+	}
+	if got := calls[0]; got != "systemctl suspend" {
+		t.Fatalf("call = %q, want systemctl suspend", got)
+	}
+}
+
 func stubCommandEnv() func() {
 	oldLookPath := commandLookPath
 	oldRun := commandRun

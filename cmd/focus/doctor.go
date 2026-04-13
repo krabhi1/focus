@@ -24,9 +24,10 @@ func runDoctor(all bool) {
 	printBackendCheck("desktop", effects.DetectDesktopFlavor())
 	printBackendCheck("lock.backend", effects.DetectLockBackend())
 	printBackendCheck("unlock.backend", effects.DetectUnlockBackend())
+	printBackendCheck("sleep.backend", effects.DetectSleepBackend())
 	printBackendCheck("sound.backend", effects.DetectSoundBackend())
 	fmt.Println(colorHeading("required:"), colorSuccess("focus-events, notify-send"))
-	fmt.Println(colorHeading("optional:"), colorMuted("lock/unlock and sound backends vary by desktop/session"))
+	fmt.Println(colorHeading("optional:"), colorMuted("lock/unlock/sleep and sound backends vary by desktop/session"))
 
 	socketPath := storage.DefaultSocketPath()
 	fmt.Printf("socket.path: %s\n", socketPath)
@@ -109,6 +110,7 @@ func printBackendCheck(label, backend string) {
 
 func detectLockBackend() string   { return effects.DetectLockBackend() }
 func detectUnlockBackend() string { return effects.DetectUnlockBackend() }
+func detectSleepBackend() string  { return effects.DetectSleepBackend() }
 func detectSoundBackend() string  { return effects.DetectSoundBackend() }
 
 func printSystemdStatus() {
