@@ -312,6 +312,21 @@ func TestUpdateConfigValueRejectsInvalidTaskEndAction(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigValueRejectsKeyInWrongSection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := UpdateConfigValue(path, "task.warning", "5m")
+	if err == nil {
+		t.Fatal("expected unknown key error")
+	}
+	if !strings.Contains(err.Error(), "unknown config key") {
+		t.Fatalf("error = %q, want unknown config key", err.Error())
+	}
+}
+
 func ptrInt(v int) *int {
 	return &v
 }

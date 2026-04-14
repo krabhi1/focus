@@ -61,8 +61,8 @@ func TestDefaultRuntimeConfigDefaults(t *testing.T) {
 	if cfg.IdleLockAfter != 2*time.Minute {
 		t.Fatalf("IdleLockAfter = %s, want 2m", cfg.IdleLockAfter)
 	}
-	if cfg.BreakDeepDuration != 5*time.Minute {
-		t.Fatalf("BreakDeepDuration = %s, want 5m", cfg.BreakDeepDuration)
+	if cfg.BreakDeepDuration != 10*time.Minute {
+		t.Fatalf("BreakDeepDuration = %s, want 10m", cfg.BreakDeepDuration)
 	}
 	if cfg.CompletionAlertRepeatCount != 3 {
 		t.Fatalf("CompletionAlertRepeatCount = %d, want 3", cfg.CompletionAlertRepeatCount)

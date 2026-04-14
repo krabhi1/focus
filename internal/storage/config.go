@@ -151,7 +151,7 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		BreakDeepStart:     DeepTaskBreakStartOffset,
 		BreakWarning:       BreakWarningOffset,
 		BreakLongDuration:  5 * time.Minute,
-		BreakDeepDuration:  5 * time.Minute,
+		BreakDeepDuration:  10 * time.Minute,
 		RelockDelay:        RelockDelay,
 		CooldownStartDelay: CooldownStartDelay,
 
@@ -566,9 +566,9 @@ func applyConfigValue(raw map[string]any, key, rawValue string) error {
 	}
 
 	switch section {
-	case "task", "cooldown", "break", "idle", "alert":
+	case "task":
 		switch leaf {
-		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after":
+		case "short", "medium", "long", "deep":
 			sectionMap[leaf] = rawValue
 			return nil
 		case "long_end_action", "deep_end_action":
@@ -577,7 +577,27 @@ func applyConfigValue(raw map[string]any, key, rawValue string) error {
 			}
 			sectionMap[leaf] = strings.ToLower(strings.TrimSpace(rawValue))
 			return nil
-		case "repeat_count":
+		}
+	case "cooldown":
+		switch leaf {
+		case "short", "long", "deep":
+			sectionMap[leaf] = rawValue
+			return nil
+		}
+	case "break":
+		switch leaf {
+		case "long_start", "deep_start", "warning", "long_duration", "deep_duration":
+			sectionMap[leaf] = rawValue
+			return nil
+		}
+	case "idle":
+		switch leaf {
+		case "warn_after", "lock_after":
+			sectionMap[leaf] = rawValue
+			return nil
+		}
+	case "alert":
+		if leaf == "repeat_count" {
 			value, err := strconv.Atoi(rawValue)
 			if err != nil {
 				return fmt.Errorf("invalid config value %q for %s: %w", rawValue, key, err)
@@ -587,12 +607,9 @@ func applyConfigValue(raw map[string]any, key, rawValue string) error {
 			}
 			sectionMap[leaf] = value
 			return nil
-		default:
-			return fmt.Errorf("unknown config key %q", key)
 		}
-	default:
-		return fmt.Errorf("unknown config key %q", key)
 	}
+	return fmt.Errorf("unknown config key %q", key)
 }
 
 func writeConfigMap(path string, raw map[string]any) error {

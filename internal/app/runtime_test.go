@@ -957,6 +957,69 @@ func TestRuntimeCooldownTransitionsFromPendingToActiveToIdle(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatusShowsBreakRelockCountdown(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 15, 9, 0, 0, 0, time.UTC)}
+	rt := NewRuntime(effects.NoopActions{})
+	rt.SetClockForTest(clock)
+	t.Cleanup(rt.Close)
+
+	rt.mu.Lock()
+	rt.state = domain.State{
+		Phase:       domain.PhaseBreak,
+		CurrentTask: &domain.Task{ID: 7, Title: "demo", Duration: 90 * time.Minute, StartTime: clock.Now().Add(-30 * time.Minute)},
+		BreakUntil:  clock.Now().Add(5 * time.Minute),
+	}
+	rt.relockUntil = clock.Now().Add(10 * time.Second)
+	rt.mu.Unlock()
+
+	got := rt.Status()
+	if !strings.Contains(got, "Relock in: 10s") {
+		t.Fatalf("status = %q, want relock countdown", got)
+	}
+	if !strings.Contains(got, "Status: break") {
+		t.Fatalf("status = %q, want break status", got)
+	}
+}
+
+func TestRuntimeStatusShowsCooldownRelockCountdown(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC)}
+	rt := NewRuntime(effects.NoopActions{})
+	rt.SetClockForTest(clock)
+	t.Cleanup(rt.Close)
+
+	rt.mu.Lock()
+	rt.state = domain.State{
+		Phase:         domain.PhaseCooldown,
+		CooldownUntil: clock.Now().Add(2 * time.Minute),
+	}
+	rt.relockUntil = clock.Now().Add(8 * time.Second)
+	rt.mu.Unlock()
+
+	got := rt.Status()
+	if !strings.Contains(got, "Cooldown active") {
+		t.Fatalf("status = %q, want cooldown status", got)
+	}
+	if !strings.Contains(got, "Relock in: 8s") {
+		t.Fatalf("status = %q, want cooldown relock countdown", got)
+	}
+}
+
 func TestRuntimePausesAndResumesTaskOnSleep(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.TaskShort = 20 * time.Millisecond

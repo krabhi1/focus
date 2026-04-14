@@ -64,7 +64,7 @@ Example:
     "deep_start": "45m",
     "warning": "2m",
     "long_duration": "5m",
-    "deep_duration": "5m"
+    "deep_duration": "10m"
   },
   "idle": {
     "warn_after": "30s",
@@ -452,7 +452,7 @@ Typical values are long enough to match real work sessions:
     "deep_start": "45m",
     "warning": "2m",
     "long_duration": "5m",
-    "deep_duration": "5m"
+    "deep_duration": "10m"
   },
   "idle": {
     "warn_after": "30s",

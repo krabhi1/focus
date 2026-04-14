@@ -212,6 +212,7 @@ func (r *Runtime) Status() string {
 	r.mu.Lock()
 	now := r.clock.Now()
 	snapshot := r.state
+	relockUntil := r.relockUntil
 	r.mu.Unlock()
 
 	if snapshot.Phase == domain.PhaseIdle && snapshot.CurrentTask == nil && !snapshot.NoTaskSince.IsZero() && !snapshot.ScreenLocked {
@@ -220,6 +221,39 @@ func (r *Runtime) Status() string {
 			remaining = 0
 		}
 		return fmt.Sprintf("No task active | Lock in: %s", remaining.Round(time.Second))
+	}
+	if !relockUntil.IsZero() {
+		relockRemaining := relockUntil.Sub(now)
+		if relockRemaining < 0 {
+			relockRemaining = 0
+		}
+		switch snapshot.Phase {
+		case domain.PhaseBreak:
+			breakRemaining := snapshot.BreakUntil.Sub(now)
+			if breakRemaining < 0 {
+				breakRemaining = 0
+			}
+			if snapshot.CurrentTask != nil {
+				taskRemaining := snapshot.CurrentTask.StartTime.Add(snapshot.CurrentTask.Duration).Sub(now)
+				if taskRemaining < 0 {
+					taskRemaining = 0
+				}
+				return fmt.Sprintf(
+					"Task: %s | Status: break | Break remaining: %s | Task remaining: %s | Relock in: %s",
+					snapshot.CurrentTask.Title,
+					breakRemaining.Round(time.Second),
+					taskRemaining.Round(time.Second),
+					relockRemaining.Round(time.Second),
+				)
+			}
+			return fmt.Sprintf("Status: break | Break remaining: %s | Relock in: %s", breakRemaining.Round(time.Second), relockRemaining.Round(time.Second))
+		case domain.PhaseCooldown:
+			cooldownRemaining := snapshot.CooldownUntil.Sub(now)
+			if cooldownRemaining < 0 {
+				cooldownRemaining = 0
+			}
+			return fmt.Sprintf("Cooldown active | Remaining: %s | Relock in: %s", cooldownRemaining.Round(time.Second), relockRemaining.Round(time.Second))
+		}
 	}
 	return status.Render(snapshot, now)
 }
