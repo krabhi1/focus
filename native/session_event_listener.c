@@ -183,77 +183,35 @@ static int on_lock_signal(sd_bus_message *message, void *userdata,
 static int on_login1_properties_changed(sd_bus_message *message, void *userdata,
                                         sd_bus_error *ret_error) {
     AppState *app = userdata;
-    int locked = 0;
+    const char *interface_name;
     int r;
 
-    (void)message;
     (void)ret_error;
 
-    if (app->login1_session_path == NULL) {
+    r = sd_bus_message_read(message, "s", &interface_name);
+    if (r < 0 || strcmp(interface_name, "org.freedesktop.login1.Session") != 0) {
         return 0;
     }
 
-    r = sd_bus_get_property_trivial(app->system_bus, "org.freedesktop.login1",
-                                    app->login1_session_path,
-                                    "org.freedesktop.login1.Session",
-                                    "LockedHint", NULL, 'b', &locked);
-    if (r < 0) {
-        fprintf(stderr, "failed to read LockedHint: %s\n", strerror(-r));
-        return 0;
-    }
+    // Enter the dictionary of changed properties
+    r = sd_bus_message_enter_container(message, 'a', "{sv}");
+    if (r < 0) return 0;
 
-    emit_screen_state(app, locked);
+    const char *property;
+    while ((r = sd_bus_message_enter_container(message, 'e', "sv")) > 0) {
+        sd_bus_message_read(message, "s", &property);
+        if (strcmp(property, "LockedHint") == 0) {
+            int locked;
+            sd_bus_message_read(message, "v", "b", &locked);
+            emit_screen_state(app, locked);
+        } else {
+            sd_bus_message_skip(message, "v");
+        }
+        sd_bus_message_exit_container(message);
+    }
+    sd_bus_message_exit_container(message);
+
     return 0;
-}
-
-static int lookup_login1_session_path(sd_bus *bus, char **ret_path) {
-    sd_bus_message *reply = NULL;
-    const char *session_path = NULL;
-    int r;
-
-    *ret_path = NULL;
-    r = sd_bus_call_method(bus, "org.freedesktop.login1",
-                           "/org/freedesktop/login1",
-                           "org.freedesktop.login1.Manager",
-                           "GetSessionByPID", NULL, &reply, "u",
-                           (uint32_t)getpid());
-    if (r < 0) {
-        return r;
-    }
-
-    r = sd_bus_message_read(reply, "o", &session_path);
-    if (r < 0) {
-        sd_bus_message_unref(reply);
-        return r;
-    }
-
-    *ret_path = strdup(session_path);
-    sd_bus_message_unref(reply);
-    if (*ret_path == NULL) {
-        return -ENOMEM;
-    }
-    return 0;
-}
-
-static int sync_login1_locked_hint(AppState *app) {
-    int locked = 0;
-    int r;
-
-    if (app->login1_session_path == NULL) {
-        return 0;
-    }
-
-    r = sd_bus_get_property_trivial(app->system_bus, "org.freedesktop.login1",
-                                    app->login1_session_path,
-                                    "org.freedesktop.login1.Session",
-                                    "LockedHint", NULL, 'b', &locked);
-    if (r < 0) {
-        fprintf(stderr, "failed to read initial LockedHint: %s\n",
-                strerror(-r));
-        return 0;
-    }
-
-    return emit_screen_state(app, locked != 0);
 }
 
 static int add_session_match(sd_bus *bus, const char *sender,
@@ -327,31 +285,17 @@ static int connect_buses(AppState *app) {
         return r;
     }
 
-    r = lookup_login1_session_path(app->system_bus, &app->login1_session_path);
+    r = sd_bus_add_match(
+        app->system_bus, NULL,
+        "type='signal',"
+        "sender='org.freedesktop.login1',"
+        "interface='org.freedesktop.DBus.Properties',"
+        "member='PropertiesChanged',"
+        "path_namespace='/org/freedesktop/login1/session'",
+        on_login1_properties_changed, app);
     if (r < 0) {
-        fprintf(stderr, "failed to resolve login1 session path: %s\n",
+        fprintf(stderr, "failed to subscribe to login1 sessions: %s\n",
                 strerror(-r));
-    } else {
-        char rule[256];
-
-        r = snprintf(rule, sizeof(rule),
-                     "type='signal',sender='org.freedesktop.login1',"
-                     "interface='org.freedesktop.DBus.Properties',"
-                     "member='PropertiesChanged',path='%s'",
-                     app->login1_session_path);
-        if (r < 0 || (size_t)r >= sizeof(rule)) {
-            fprintf(stderr, "failed to build login1 LockedHint match rule\n");
-        } else {
-            r = sd_bus_add_match(app->system_bus, NULL, rule,
-                                 on_login1_properties_changed, app);
-            if (r < 0) {
-                fprintf(stderr,
-                        "failed to subscribe to login1 LockedHint changes: %s\n",
-                        strerror(-r));
-            } else {
-                sync_login1_locked_hint(app);
-            }
-        }
     }
 
     r = add_session_match(app->session_bus, "org.gnome.ScreenSaver",
