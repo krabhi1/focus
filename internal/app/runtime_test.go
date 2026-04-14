@@ -392,6 +392,47 @@ func TestRuntimeStatusArmsIdleTracking(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatusDoesNotResetAfterIdleWarning(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.IdleWarnAfter = 10 * time.Second
+	cfg.IdleLockAfter = 2 * time.Minute
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)}
+	rt.SetClockForTest(clock)
+	start := clock.Now()
+
+	rt.mu.Lock()
+	rt.state.NoTaskSince = start
+	rt.stopNoTaskTimersLocked()
+	rt.armNoTaskTimersLocked(start)
+	rt.mu.Unlock()
+
+	clock.Advance(11 * time.Second)
+
+	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
+		t.Fatalf("status after warning = %q, want idle countdown", got)
+	}
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if !rt.state.NoTaskSince.Equal(start) {
+		t.Fatalf("NoTaskSince = %s, want %s without reset", rt.state.NoTaskSince, start)
+	}
+	remaining := rt.clock.Until(rt.state.NoTaskSince.Add(cfg.IdleLockAfter))
+	if remaining > 2*time.Minute || remaining < 108*time.Second {
+		t.Fatalf("remaining after warning = %s, want about 109s without reset", remaining)
+	}
+}
+
 func TestRuntimeCancelTaskGraceWindow(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	if err := storage.SetRuntimeConfig(cfg); err != nil {

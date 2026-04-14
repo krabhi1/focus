@@ -52,8 +52,8 @@ func TestResolveTaskPresetDuration(t *testing.T) {
 
 func TestDefaultRuntimeConfigDefaults(t *testing.T) {
 	cfg := DefaultRuntimeConfig()
-	if cfg.RelockDelay != 5*time.Second {
-		t.Fatalf("RelockDelay = %s, want 5s", cfg.RelockDelay)
+	if cfg.RelockDelay != 10*time.Second {
+		t.Fatalf("RelockDelay = %s, want 10s", cfg.RelockDelay)
 	}
 	if cfg.CooldownStartDelay != 2*time.Minute {
 		t.Fatalf("CooldownStartDelay = %s, want 2m", cfg.CooldownStartDelay)

@@ -142,7 +142,7 @@ func TestRunConfigHelpPrintsUsage(t *testing.T) {
 		"task.short (default: 15m0s)",
 		"task.long_end_action (default: lock)",
 		"task.deep_end_action (default: sleep)",
-		"relock_delay (default: 5s)",
+		"relock_delay (default: 10s)",
 		"cooldown_start_delay (default: 2m0s)",
 		"focus config idle.lock_after 3m",
 		"Use one argument to read a value.",

@@ -330,7 +330,7 @@ func (r *Runtime) ensureNoTaskTrackingLocked(now time.Time) {
 	if r.current != nil || r.state.ScreenLocked || r.state.Phase == domain.PhaseCooldown || r.state.Phase == domain.PhasePendingCooldown || r.state.Phase == domain.PhaseBreak {
 		return
 	}
-	if r.state.NoTaskSince.IsZero() || !r.hasDeadlineLocked("no_task_warn") || !r.hasDeadlineLocked("no_task_lock") {
+	if r.state.NoTaskSince.IsZero() || !r.hasDeadlineLocked("no_task_lock") {
 		r.armNoTaskTimersLocked(now)
 	}
 }
