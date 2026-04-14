@@ -28,7 +28,10 @@
 typedef struct {
     sd_bus *system_bus;
     sd_bus *session_bus;
+    char *login1_session_path;
     int output_format;
+    bool screen_state_known;
+    bool screen_locked;
 } AppState;
 
 static void write_u16_le(uint8_t *dst, uint16_t value) {
@@ -112,6 +115,19 @@ static void emit_event(int output_format, uint8_t event_kind, uint8_t event_stat
     emit_text_event(event, state);
 }
 
+static int emit_screen_state(AppState *app, bool locked) {
+    if (app->screen_state_known && app->screen_locked == locked) {
+        return 0;
+    }
+
+    app->screen_state_known = true;
+    app->screen_locked = locked;
+    emit_event(app->output_format, EVENT_KIND_SCREEN,
+               locked ? EVENT_STATE_LOCKED : EVENT_STATE_UNLOCKED, "screen",
+               locked ? "locked" : "unlocked");
+    return 0;
+}
+
 static int on_sleep_signal(sd_bus_message *message, void *userdata,
                            sd_bus_error *ret_error) {
     AppState *app = userdata;
@@ -160,10 +176,84 @@ static int on_lock_signal(sd_bus_message *message, void *userdata,
         return 0;
     }
 
-    emit_event(app->output_format, EVENT_KIND_SCREEN,
-               active ? EVENT_STATE_LOCKED : EVENT_STATE_UNLOCKED, "screen",
-               active ? "locked" : "unlocked");
+    emit_screen_state(app, active != 0);
     return 0;
+}
+
+static int on_login1_properties_changed(sd_bus_message *message, void *userdata,
+                                        sd_bus_error *ret_error) {
+    AppState *app = userdata;
+    int locked = 0;
+    int r;
+
+    (void)message;
+    (void)ret_error;
+
+    if (app->login1_session_path == NULL) {
+        return 0;
+    }
+
+    r = sd_bus_get_property_trivial(app->system_bus, "org.freedesktop.login1",
+                                    app->login1_session_path,
+                                    "org.freedesktop.login1.Session",
+                                    "LockedHint", NULL, 'b', &locked);
+    if (r < 0) {
+        fprintf(stderr, "failed to read LockedHint: %s\n", strerror(-r));
+        return 0;
+    }
+
+    emit_screen_state(app, locked);
+    return 0;
+}
+
+static int lookup_login1_session_path(sd_bus *bus, char **ret_path) {
+    sd_bus_message *reply = NULL;
+    const char *session_path = NULL;
+    int r;
+
+    *ret_path = NULL;
+    r = sd_bus_call_method(bus, "org.freedesktop.login1",
+                           "/org/freedesktop/login1",
+                           "org.freedesktop.login1.Manager",
+                           "GetSessionByPID", NULL, &reply, "u",
+                           (uint32_t)getpid());
+    if (r < 0) {
+        return r;
+    }
+
+    r = sd_bus_message_read(reply, "o", &session_path);
+    if (r < 0) {
+        sd_bus_message_unref(reply);
+        return r;
+    }
+
+    *ret_path = strdup(session_path);
+    sd_bus_message_unref(reply);
+    if (*ret_path == NULL) {
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+static int sync_login1_locked_hint(AppState *app) {
+    int locked = 0;
+    int r;
+
+    if (app->login1_session_path == NULL) {
+        return 0;
+    }
+
+    r = sd_bus_get_property_trivial(app->system_bus, "org.freedesktop.login1",
+                                    app->login1_session_path,
+                                    "org.freedesktop.login1.Session",
+                                    "LockedHint", NULL, 'b', &locked);
+    if (r < 0) {
+        fprintf(stderr, "failed to read initial LockedHint: %s\n",
+                strerror(-r));
+        return 0;
+    }
+
+    return emit_screen_state(app, locked != 0);
 }
 
 static int add_session_match(sd_bus *bus, const char *sender,
@@ -235,6 +325,33 @@ static int connect_buses(AppState *app) {
         fprintf(stderr, "failed to subscribe to PrepareForShutdown: %s\n",
                 strerror(-r));
         return r;
+    }
+
+    r = lookup_login1_session_path(app->system_bus, &app->login1_session_path);
+    if (r < 0) {
+        fprintf(stderr, "failed to resolve login1 session path: %s\n",
+                strerror(-r));
+    } else {
+        char rule[256];
+
+        r = snprintf(rule, sizeof(rule),
+                     "type='signal',sender='org.freedesktop.login1',"
+                     "interface='org.freedesktop.DBus.Properties',"
+                     "member='PropertiesChanged',path='%s'",
+                     app->login1_session_path);
+        if (r < 0 || (size_t)r >= sizeof(rule)) {
+            fprintf(stderr, "failed to build login1 LockedHint match rule\n");
+        } else {
+            r = sd_bus_add_match(app->system_bus, NULL, rule,
+                                 on_login1_properties_changed, app);
+            if (r < 0) {
+                fprintf(stderr,
+                        "failed to subscribe to login1 LockedHint changes: %s\n",
+                        strerror(-r));
+            } else {
+                sync_login1_locked_hint(app);
+            }
+        }
     }
 
     r = add_session_match(app->session_bus, "org.gnome.ScreenSaver",
@@ -319,6 +436,7 @@ int main(int argc, char *argv[]) {
         if (app.session_bus != NULL) {
             sd_bus_unref(app.session_bus);
         }
+        free(app.login1_session_path);
         return 1;
     }
 
@@ -369,5 +487,6 @@ int main(int argc, char *argv[]) {
 
     sd_bus_unref(app.system_bus);
     sd_bus_unref(app.session_bus);
+    free(app.login1_session_path);
     return 1;
 }
