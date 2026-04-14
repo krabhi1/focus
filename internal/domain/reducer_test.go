@@ -42,6 +42,41 @@ func TestReduceTaskCompletedToPendingThenCooldownThenIdle(t *testing.T) {
 	}
 }
 
+func TestReduceCooldownStartEmitsTaskEndAction(t *testing.T) {
+	now := time.Date(2026, 3, 22, 12, 0, 0, 0, time.UTC)
+	base := InitialState()
+	base.Phase = PhasePendingCooldown
+	base.CooldownStartUntil = now
+	base.CooldownDuration = 30 * time.Second
+	base.TaskEndAction = "sleep"
+
+	res := Reduce(base, Event{Type: EventTick, At: now})
+	if res.State.Phase != PhaseCooldown {
+		t.Fatalf("phase = %s, want %s", res.State.Phase, PhaseCooldown)
+	}
+	foundSleep := false
+	for _, action := range res.Actions {
+		if action.Type == ActionSleep {
+			foundSleep = true
+		}
+	}
+	if !foundSleep {
+		t.Fatal("expected sleep action on cooldown start")
+	}
+
+	base.TaskEndAction = "lock"
+	res = Reduce(base, Event{Type: EventTick, At: now})
+	foundLock := false
+	for _, action := range res.Actions {
+		if action.Type == ActionLockScreen {
+			foundLock = true
+		}
+	}
+	if !foundLock {
+		t.Fatal("expected lock action on cooldown start")
+	}
+}
+
 func TestReduceBreakExpiryReturnsToActive(t *testing.T) {
 	now := time.Date(2026, 3, 22, 12, 0, 0, 0, time.UTC)
 	s := InitialState()

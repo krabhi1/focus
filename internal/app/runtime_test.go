@@ -211,7 +211,7 @@ func TestRuntimeTraceLogsCooldownCompletion(t *testing.T) {
 		CooldownStartUntil: time.Time{},
 	}
 	rt.current = nil
-	rt.noTaskSince = time.Time{}
+	rt.state.NoTaskSince = time.Time{}
 	rt.mu.Unlock()
 
 	rt.finishCooldown()
@@ -358,7 +358,7 @@ func TestRuntimeCooldownCompletionCancelsRelock(t *testing.T) {
 	}
 }
 
-func TestRuntimeStatusDoesNotMutateState(t *testing.T) {
+func TestRuntimeStatusArmsIdleTracking(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	if err := storage.SetRuntimeConfig(cfg); err != nil {
 		t.Fatalf("SetRuntimeConfig failed: %v", err)
@@ -374,20 +374,21 @@ func TestRuntimeStatusDoesNotMutateState(t *testing.T) {
 	rt.SetClockForTest(clock)
 
 	rt.mu.Lock()
-	rt.noTaskSince = time.Time{}
+	rt.state.NoTaskSince = time.Time{}
 	rt.stopNoTaskTimersLocked()
-	before := rt.traceStateSnapshotLocked()
 	rt.mu.Unlock()
 
-	if got := rt.Status(); got != "Idle" {
-		t.Fatalf("status = %q, want Idle", got)
+	if got := rt.Status(); !strings.HasPrefix(got, "No task active | Lock in:") {
+		t.Fatalf("status = %q, want idle countdown", got)
 	}
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	after := rt.traceStateSnapshotLocked()
-	if before != after {
-		t.Fatalf("state changed after status read: before=%+v after=%+v", before, after)
+	if rt.state.NoTaskSince.IsZero() {
+		t.Fatal("status should have rearmed idle tracking")
+	}
+	if got := rt.state.Phase; got != domain.PhaseIdle {
+		t.Fatalf("phase = %s, want idle", got)
 	}
 }
 
@@ -444,7 +445,7 @@ func TestRuntimeStatusReArmsAfterScreenUnlock(t *testing.T) {
 	rt.OnScreenLocked()
 
 	rt.mu.Lock()
-	if !rt.noTaskSince.IsZero() {
+	if !rt.state.NoTaskSince.IsZero() {
 		rt.mu.Unlock()
 		t.Fatal("noTaskSince after lock = non-zero, want cleared")
 	}
@@ -458,7 +459,7 @@ func TestRuntimeStatusReArmsAfterScreenUnlock(t *testing.T) {
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.noTaskSince.IsZero() {
+	if rt.state.NoTaskSince.IsZero() {
 		t.Fatal("noTaskSince after unlock = zero, want repaired timestamp")
 	}
 }
@@ -555,6 +556,40 @@ func TestRuntimeDebugStringIncludesStateAndConfig(t *testing.T) {
 	}
 	if !strings.Contains(debug, "config.alert.repeat_count: 2") {
 		t.Fatalf("debug = %q, want alert repeat count", debug)
+	}
+}
+
+func TestRuntimeDebugStringReconcilesOverdueCooldown(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.CompletionAlertRepeatCount = 0
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	clock := &fakeRuntimeClock{now: time.Date(2026, 4, 14, 16, 11, 40, 0, time.FixedZone("IST", 5*60*60+30*60))}
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+	rt.SetClockForTest(clock)
+
+	rt.mu.Lock()
+	rt.state = domain.State{
+		Phase:            domain.PhaseCooldown,
+		CooldownUntil:    clock.Now().Add(-time.Minute),
+		CooldownDuration: 2 * time.Minute,
+	}
+	rt.current = nil
+	rt.state.NoTaskSince = time.Time{}
+	rt.mu.Unlock()
+
+	debug := rt.DebugString()
+	if !strings.Contains(debug, "phase: idle") {
+		t.Fatalf("debug = %q, want idle phase after reconciliation", debug)
+	}
+	if !strings.Contains(debug, "no_task_since:") || strings.Contains(debug, "no_task_since: none") {
+		t.Fatalf("debug = %q, want no_task_since to be repaired", debug)
 	}
 }
 

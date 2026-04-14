@@ -19,7 +19,8 @@ type Event struct {
 	Type EventType
 	At   time.Time
 
-	Task *Task
+	Task          *Task
+	TaskEndAction string
 
 	CooldownStartAt  time.Time
 	CooldownDuration time.Duration
@@ -32,6 +33,7 @@ type ActionType string
 const (
 	ActionLockScreen   ActionType = "lock_screen"
 	ActionUnlockScreen ActionType = "unlock_screen"
+	ActionSleep        ActionType = "sleep"
 	ActionNotify       ActionType = "notify"
 	ActionPlaySound    ActionType = "play_sound"
 	ActionStopSound    ActionType = "stop_sound"

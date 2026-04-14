@@ -17,6 +17,7 @@ func Reduce(prev State, ev Event) Result {
 	case EventTaskStarted:
 		next.Phase = PhaseActive
 		next.CurrentTask = ev.Task
+		next.TaskEndAction = ""
 		next.BreakUntil = time.Time{}
 		next.CooldownStartUntil = time.Time{}
 		next.CooldownUntil = time.Time{}
@@ -37,6 +38,7 @@ func Reduce(prev State, ev Event) Result {
 	case EventTaskCompleted:
 		next.Phase = PhasePendingCooldown
 		next.CurrentTask = nil
+		next.TaskEndAction = ev.TaskEndAction
 		next.CooldownStartUntil = ev.CooldownStartAt
 		next.CooldownDuration = ev.CooldownDuration
 		next.CooldownUntil = time.Time{}
@@ -67,6 +69,11 @@ func Reduce(prev State, ev Event) Result {
 			next.Phase = PhaseCooldown
 			next.CooldownUntil = now.Add(next.CooldownDuration)
 			next.CooldownStartUntil = time.Time{}
+			if next.TaskEndAction == "sleep" {
+				actions = append(actions, Action{Type: ActionSleep, Title: "Cooldown started"})
+			} else {
+				actions = append(actions, Action{Type: ActionLockScreen, Title: "Cooldown started"})
+			}
 		}
 	case PhaseCooldown:
 		if !next.CooldownUntil.IsZero() && !now.Before(next.CooldownUntil) {
@@ -74,6 +81,7 @@ func Reduce(prev State, ev Event) Result {
 			next.CooldownUntil = time.Time{}
 			next.CooldownDuration = 0
 			next.CurrentTask = nil
+			next.TaskEndAction = ""
 		}
 	}
 
