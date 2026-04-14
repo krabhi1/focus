@@ -104,9 +104,12 @@ func TestIsHelperFatalError(t *testing.T) {
 func TestMonitorHelperErrorsCancelsOnFatal(t *testing.T) {
 	errCh := make(chan error, 2)
 	helperFatal := make(chan error, 1)
-	cancelled := false
+	cancelled := make(chan struct{}, 1)
 	cancel := func() {
-		cancelled = true
+		select {
+		case cancelled <- struct{}{}:
+		default:
+		}
 	}
 
 	go monitorHelperErrors(errCh, cancel, helperFatal)
@@ -124,7 +127,9 @@ func TestMonitorHelperErrorsCancelsOnFatal(t *testing.T) {
 		t.Fatal("timed out waiting for helper fatal error")
 	}
 
-	if !cancelled {
+	select {
+	case <-cancelled:
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected cancel to be called for fatal helper error")
 	}
 }
@@ -196,6 +201,48 @@ func TestConsumeHelperEventsTraceLoggingEnabled(t *testing.T) {
 
 	if got := buf.String(); !strings.Contains(got, "focus-events event=screen state=locked") {
 		t.Fatalf("log output = %q, want focus-events trace log", got)
+	}
+}
+
+func TestConsumeHelperEventsAcceptsScreenStateAliases(t *testing.T) {
+	cfg := storage.DefaultRuntimeConfig()
+	cfg.TaskShort = 20 * time.Millisecond
+	cfg.TaskMedium = 40 * time.Millisecond
+	cfg.TaskLong = 120 * time.Millisecond
+	cfg.TaskDeep = 160 * time.Millisecond
+	cfg.CooldownShort = 10 * time.Millisecond
+	cfg.CooldownLong = 20 * time.Millisecond
+	cfg.CooldownDeep = 30 * time.Millisecond
+	cfg.BreakWarning = 5 * time.Millisecond
+	cfg.BreakLongStart = 40 * time.Millisecond
+	cfg.BreakDeepStart = 60 * time.Millisecond
+	cfg.BreakLongDuration = 20 * time.Millisecond
+	cfg.BreakDeepDuration = 20 * time.Millisecond
+	cfg.RelockDelay = 1 * time.Millisecond
+	cfg.CooldownStartDelay = 10 * time.Millisecond
+	if err := storage.SetRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SetRuntimeConfig failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = storage.SetRuntimeConfig(storage.DefaultRuntimeConfig())
+	})
+
+	rt := appForTest(t)
+	eventCh := make(chan events.Event, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		consumeHelperEvents(eventCh, rt)
+	}()
+
+	eventCh <- events.Event{Kind: events.KindScreen, State: "entered"}
+	eventCh <- events.Event{Kind: events.KindScreen, State: "exited"}
+	close(eventCh)
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for helper event consumer")
 	}
 }
 

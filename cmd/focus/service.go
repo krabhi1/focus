@@ -16,6 +16,7 @@ func userServicePath() (string, error) {
 }
 
 func renderUserService(bindir string) string {
+	libexecdir := filepath.Join(filepath.Dir(bindir), "libexec", "focus")
 	return fmt.Sprintf(`[Unit]
 Description=Focus daemon
 After=graphical-session.target
@@ -25,12 +26,12 @@ PartOf=graphical-session.target
 Type=simple
 ExecStart=%s/focusd
 WorkingDirectory=%%h
-Environment=PATH=%s:/usr/local/bin:/usr/bin:/bin
+Environment=FOCUS_LIBEXEC_DIR=%s
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true
 
 [Install]
 WantedBy=default.target
-`, bindir, bindir)
+`, libexecdir, libexecdir)
 }

@@ -23,7 +23,9 @@ type State struct {
 	Phase        Phase
 	ScreenLocked bool
 
-	CurrentTask *Task
+	CurrentTask   *Task
+	TaskEndAction string
+	NoTaskSince   time.Time
 
 	BreakUntil         time.Time
 	CooldownStartUntil time.Time

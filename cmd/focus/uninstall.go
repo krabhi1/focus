@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,10 +12,23 @@ import (
 	"strings"
 )
 
+var readUninstallConfirmationFn = readUninstallConfirmation
+
 func Uninstall(prefix string) error {
 	bindir, err := resolveBinDir(prefix)
 	if err != nil {
 		return err
+	}
+
+	for step := 1; step <= 3; step++ {
+		fmt.Printf("%s (%d/3) [y/N]: ", colorPrompt("Are you sure you want to uninstall focus"), step)
+		answer, err := readUninstallConfirmationFn()
+		if err != nil {
+			return err
+		}
+		if answer != "y" && answer != "yes" {
+			return fmt.Errorf("uninstall cancelled")
+		}
 	}
 
 	if err := removeUserService(); err != nil {
@@ -25,6 +40,15 @@ func Uninstall(prefix string) error {
 	}
 
 	return nil
+}
+
+func readUninstallConfirmation() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read confirmation: %w", err)
+	}
+	return strings.TrimSpace(strings.ToLower(answer)), nil
 }
 
 func resolveBinDir(prefix string) (string, error) {
@@ -62,6 +86,7 @@ func removeUserService() error {
 	if err := os.Remove(servicePath); err != nil {
 		return fmt.Errorf("remove service file: %w", err)
 	}
+	fmt.Printf("Removed systemd user unit %s\n", servicePath)
 
 	if runtime.GOOS == "linux" {
 		_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
@@ -72,23 +97,35 @@ func removeUserService() error {
 }
 
 func removeInstalledBinaries(bindir string) error {
-	files := []string{
+	prefix := filepath.Dir(bindir)
+	for _, file := range []string{
 		filepath.Join(bindir, "focus"),
 		filepath.Join(bindir, "focusd"),
 		filepath.Join(bindir, "focus-events"),
-	}
-
-	for _, file := range files {
+	} {
 		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove %s: %w", file, err)
 		}
 	}
+	fmt.Printf("Removed binaries from %s\n", bindir)
 
-	prefix := filepath.Dir(bindir)
+	libexecDir := filepath.Join(prefix, "libexec", "focus")
+	for _, file := range []string{
+		filepath.Join(libexecDir, "focusd"),
+		filepath.Join(libexecDir, "focus-events"),
+	} {
+		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", file, err)
+		}
+	}
+	fmt.Printf("Removed private runtime files from %s\n", libexecDir)
+	_ = os.Remove(libexecDir)
+	_ = os.Remove(filepath.Join(prefix, "libexec"))
 	assetsDir := filepath.Join(prefix, "share", "focus", "assets")
 	if err := os.RemoveAll(assetsDir); err != nil {
 		return fmt.Errorf("remove assets directory: %w", err)
 	}
+	fmt.Printf("Removed assets from %s\n", assetsDir)
 
 	_ = os.Remove(filepath.Join(prefix, "share", "focus"))
 

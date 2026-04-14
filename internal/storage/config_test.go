@@ -26,15 +26,19 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 		Cooldown:           cooldownJSON{Long: "12m"},
 		Break:              breakJSON{Warning: "90s"},
 		Idle:               idleJSON{WarnAfter: "4m"},
-		Alert:              alertJSON{RepeatInterval: "7s"},
+		Alert:              alertJSON{RepeatCount: ptrInt(7)},
 		RelockDelay:        "45s",
 		CooldownStartDelay: "11s",
 	}
 	override := 8 * time.Minute
 	relockOverride := 9 * time.Minute
+	longEndAction := TaskEndActionSleep
+	deepEndAction := TaskEndActionLock
 	cfg, err := ResolveRuntimeConfig(defaults, fileCfg, Overrides{
-		IdleLockAfter: &override,
-		RelockDelay:   &relockOverride,
+		IdleLockAfter:     &override,
+		RelockDelay:       &relockOverride,
+		TaskLongEndAction: &longEndAction,
+		TaskDeepEndAction: &deepEndAction,
 	})
 	if err != nil {
 		t.Fatalf("ResolveRuntimeConfig returned error: %v", err)
@@ -61,8 +65,14 @@ func TestResolveRuntimeConfigAppliesFileAndOverrides(t *testing.T) {
 	if cfg.IdleLockAfter != 8*time.Minute {
 		t.Fatalf("IdleLockAfter = %s, want 8m override", cfg.IdleLockAfter)
 	}
-	if cfg.CompletionAlertRepeatInterval != 7*time.Second {
-		t.Fatalf("CompletionAlertRepeatInterval = %s, want 7s", cfg.CompletionAlertRepeatInterval)
+	if cfg.CompletionAlertRepeatCount != 7 {
+		t.Fatalf("CompletionAlertRepeatCount = %d, want 7", cfg.CompletionAlertRepeatCount)
+	}
+	if cfg.TaskLongEndAction != TaskEndActionSleep {
+		t.Fatalf("TaskLongEndAction = %q, want sleep", cfg.TaskLongEndAction)
+	}
+	if cfg.TaskDeepEndAction != TaskEndActionLock {
+		t.Fatalf("TaskDeepEndAction = %q, want lock", cfg.TaskDeepEndAction)
 	}
 }
 
@@ -98,6 +108,19 @@ func TestResolveRuntimeConfigRejectsInvalidDuration(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeConfigAllowsZeroAlertRepeatCount(t *testing.T) {
+	defaults := DefaultRuntimeConfig()
+	cfg, err := ResolveRuntimeConfig(defaults, File{
+		Alert: alertJSON{RepeatCount: ptrInt(0)},
+	}, Overrides{})
+	if err != nil {
+		t.Fatalf("ResolveRuntimeConfig returned error: %v", err)
+	}
+	if cfg.CompletionAlertRepeatCount != 0 {
+		t.Fatalf("CompletionAlertRepeatCount = %d, want 0", cfg.CompletionAlertRepeatCount)
+	}
+}
+
 func TestResolveRuntimeConfigAllowsZeroRelockDelay(t *testing.T) {
 	defaults := DefaultRuntimeConfig()
 	cfg, err := ResolveRuntimeConfig(defaults, File{
@@ -108,6 +131,29 @@ func TestResolveRuntimeConfigAllowsZeroRelockDelay(t *testing.T) {
 	}
 	if cfg.RelockDelay != 0 {
 		t.Fatalf("RelockDelay = %s, want 0s", cfg.RelockDelay)
+	}
+}
+
+func TestResolveRuntimeConfigAllowsTaskEndActionsAndDefaults(t *testing.T) {
+	defaults := DefaultRuntimeConfig()
+	cfg, err := ResolveRuntimeConfig(defaults, File{
+		Task: taskJSON{LongEndAction: TaskEndActionLock, DeepEndAction: TaskEndActionSleep},
+	}, Overrides{})
+	if err != nil {
+		t.Fatalf("ResolveRuntimeConfig returned error: %v", err)
+	}
+	if cfg.TaskLongEndAction != TaskEndActionLock {
+		t.Fatalf("TaskLongEndAction = %q, want lock", cfg.TaskLongEndAction)
+	}
+	if cfg.TaskDeepEndAction != TaskEndActionSleep {
+		t.Fatalf("TaskDeepEndAction = %q, want sleep", cfg.TaskDeepEndAction)
+	}
+
+	if defaults.TaskLongEndAction != TaskEndActionLock {
+		t.Fatalf("default TaskLongEndAction = %q, want lock", defaults.TaskLongEndAction)
+	}
+	if defaults.TaskDeepEndAction != TaskEndActionSleep {
+		t.Fatalf("default TaskDeepEndAction = %q, want sleep", defaults.TaskDeepEndAction)
 	}
 }
 
@@ -124,7 +170,7 @@ func TestDefaultPathUsesFocusConfigEnv(t *testing.T) {
 
 func TestLoadParsesJSONFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	body := `{"idle":{"warn_after":"10s","lock_after":"20s"},"relock_delay":"30s","cooldown_start_delay":"10s"}`
+	body := `{"task":{"long_end_action":"sleep","deep_end_action":"lock"},"idle":{"warn_after":"10s","lock_after":"20s"},"relock_delay":"30s","cooldown_start_delay":"10s","alert":{"repeat_count":4}}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
@@ -139,37 +185,46 @@ func TestLoadParsesJSONFile(t *testing.T) {
 		t.Fatalf("idle.warn_after = %q, want 10s", cfg.Idle.WarnAfter)
 	}
 	if cfg.RelockDelay != "30s" {
-		t.Fatalf("relock_delay = %q, want 5s", cfg.RelockDelay)
+		t.Fatalf("relock_delay = %q, want 30s", cfg.RelockDelay)
 	}
 	if cfg.CooldownStartDelay != "10s" {
 		t.Fatalf("cooldown_start_delay = %q, want 10s", cfg.CooldownStartDelay)
 	}
+	if cfg.Alert.RepeatCount == nil || *cfg.Alert.RepeatCount != 4 {
+		t.Fatalf("alert.repeat_count = %#v, want 4", cfg.Alert.RepeatCount)
+	}
+	if cfg.Task.LongEndAction != "sleep" {
+		t.Fatalf("task.long_end_action = %q, want sleep", cfg.Task.LongEndAction)
+	}
+	if cfg.Task.DeepEndAction != "lock" {
+		t.Fatalf("task.deep_end_action = %q, want lock", cfg.Task.DeepEndAction)
+	}
 }
 
-func TestLoadRejectsLegacyBreakRelockDelay(t *testing.T) {
+func TestLoadRejectsLegacyAlertRepeatInterval(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	body := `{"break":{"relock_delay":"30s"}}`
+	body := `{"alert":{"repeat_interval":"3s"}}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
 	_, _, err := Load(path)
 	if err == nil {
-		t.Fatal("expected error for legacy break.relock_delay")
+		t.Fatal("expected error for legacy alert.repeat_interval")
 	}
-	if !strings.Contains(err.Error(), "top-level relock_delay") {
-		t.Fatalf("error = %q, want top-level relock_delay guidance", err.Error())
+	if !strings.Contains(err.Error(), "alert.repeat_count") {
+		t.Fatalf("error = %q, want alert.repeat_count guidance", err.Error())
 	}
 }
 
 func TestUpdateConfigValueWritesAndPreservesOtherFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	body := `{"idle":{"warn_after":"1m","lock_after":"2m"},"relock_delay":"0s"}`
+	body := `{"task":{"long_end_action":"lock","deep_end_action":"sleep"},"idle":{"warn_after":"1m","lock_after":"2m"},"relock_delay":"0s"}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
-	if err := UpdateConfigValue(path, "idle.lock_after", "3m"); err != nil {
+	if err := UpdateConfigValue(path, "task.long_end_action", "sleep"); err != nil {
 		t.Fatalf("UpdateConfigValue returned error: %v", err)
 	}
 
@@ -183,11 +238,17 @@ func TestUpdateConfigValueWritesAndPreservesOtherFields(t *testing.T) {
 	if cfg.Idle.WarnAfter != "1m" {
 		t.Fatalf("idle.warn_after = %q, want 1m", cfg.Idle.WarnAfter)
 	}
-	if cfg.Idle.LockAfter != "3m" {
-		t.Fatalf("idle.lock_after = %q, want 3m", cfg.Idle.LockAfter)
+	if cfg.Idle.LockAfter != "2m" {
+		t.Fatalf("idle.lock_after = %q, want 2m", cfg.Idle.LockAfter)
 	}
 	if cfg.RelockDelay != "0s" {
-		t.Fatalf("relock_delay = %q, want 5s", cfg.RelockDelay)
+		t.Fatalf("relock_delay = %q, want 0s", cfg.RelockDelay)
+	}
+	if cfg.Task.LongEndAction != "sleep" {
+		t.Fatalf("task.long_end_action = %q, want sleep", cfg.Task.LongEndAction)
+	}
+	if cfg.Task.DeepEndAction != "sleep" {
+		t.Fatalf("task.deep_end_action = %q, want sleep", cfg.Task.DeepEndAction)
 	}
 }
 
@@ -234,4 +295,23 @@ func TestUpdateConfigValueRejectsInvalidResultingConfig(t *testing.T) {
 	if !strings.Contains(err.Error(), "idle.warn_after must be less than idle.lock_after") {
 		t.Fatalf("error = %q, want idle warning validation failure", err.Error())
 	}
+}
+
+func TestUpdateConfigValueRejectsInvalidTaskEndAction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err := UpdateConfigValue(path, "task.long_end_action", "pause")
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "task.long_end_action") {
+		t.Fatalf("error = %q, want task.long_end_action validation failure", err.Error())
+	}
+}
+
+func ptrInt(v int) *int {
+	return &v
 }

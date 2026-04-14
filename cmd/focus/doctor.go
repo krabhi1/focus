@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"focus/internal/effects"
@@ -11,21 +12,22 @@ import (
 	"focus/internal/storage"
 )
 
-func runDoctor() {
+func runDoctor(all bool) {
 	fmt.Println(colorTitle("Focus Doctor"))
 	fmt.Println("")
 
 	printCommandCheck("focus", true)
-	printCommandCheck("focusd", true)
-	printCommandCheck("focus-events", true)
+	printInstalledCommandCheck("focusd", true)
+	printInstalledCommandCheck("focus-events", true)
 	printCommandCheck("notify-send", true)
 	printCommandCheck("systemctl", false)
 	printBackendCheck("desktop", effects.DetectDesktopFlavor())
 	printBackendCheck("lock.backend", effects.DetectLockBackend())
 	printBackendCheck("unlock.backend", effects.DetectUnlockBackend())
+	printBackendCheck("sleep.backend", effects.DetectSleepBackend())
 	printBackendCheck("sound.backend", effects.DetectSoundBackend())
 	fmt.Println(colorHeading("required:"), colorSuccess("focus-events, notify-send"))
-	fmt.Println(colorHeading("optional:"), colorMuted("lock/unlock and sound backends vary by desktop/session"))
+	fmt.Println(colorHeading("optional:"), colorMuted("lock/unlock/sleep and sound backends vary by desktop/session"))
 
 	socketPath := storage.DefaultSocketPath()
 	fmt.Printf("socket.path: %s\n", socketPath)
@@ -53,6 +55,10 @@ func runDoctor() {
 	}
 
 	printSystemdStatus()
+	if all {
+		fmt.Println("")
+		printRuntimeDebug()
+	}
 }
 
 func printCommandCheck(name string, required bool) {
@@ -65,6 +71,29 @@ func printCommandCheck(name string, required bool) {
 	} else {
 		fmt.Printf("%s %s\n", colorInfo("dep."+name+":"), colorWarn("missing (optional)"))
 	}
+}
+
+func printInstalledCommandCheck(name string, required bool) {
+	if path := installedBinaryPath(name); path != "" {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
+			fmt.Printf("%s %s (%s)\n", colorInfo("dep."+name+":"), colorSuccess("ok"), path)
+			return
+		}
+	}
+	printCommandCheck(name, required)
+}
+
+func installedBinaryPath(name string) string {
+	if p := os.Getenv("FOCUS_LIBEXEC_DIR"); p != "" {
+		return filepath.Join(p, name)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	bindir := filepath.Dir(exe)
+	prefix := filepath.Dir(bindir)
+	return filepath.Join(prefix, "libexec", "focus", name)
 }
 
 func printBackendCheck(label, backend string) {
@@ -81,6 +110,7 @@ func printBackendCheck(label, backend string) {
 
 func detectLockBackend() string   { return effects.DetectLockBackend() }
 func detectUnlockBackend() string { return effects.DetectUnlockBackend() }
+func detectSleepBackend() string  { return effects.DetectSleepBackend() }
 func detectSoundBackend() string  { return effects.DetectSoundBackend() }
 
 func printSystemdStatus() {
@@ -110,5 +140,32 @@ func printSystemdStatus() {
 	}
 	if activeErr != nil && active == "unknown" {
 		fmt.Printf("%s %s\n", colorInfo("service.active.err:"), colorWarn(activeErr.Error()))
+	}
+}
+
+func printRuntimeDebug() {
+	fmt.Println(colorHeading("runtime debug:"))
+	conn, err := connectDaemon()
+	if err != nil {
+		fmt.Printf("  %s %v\n", colorInfo("daemon.debug:"), colorWarn(err.Error()))
+		return
+	}
+	defer conn.Close()
+
+	res, err := SendRequest(conn, protocol.Request{Command: "debug"})
+	if err != nil {
+		fmt.Printf("  %s %v\n", colorInfo("daemon.debug:"), colorWarn(err.Error()))
+		return
+	}
+	if res.Error != nil {
+		fmt.Printf("  %s %v\n", colorInfo("daemon.debug:"), colorWarn(res.Error.Message))
+		return
+	}
+	if res.Success == nil || strings.TrimSpace(res.Success.Message) == "" {
+		fmt.Printf("  %s %s\n", colorInfo("daemon.debug:"), colorWarn("empty"))
+		return
+	}
+	for _, line := range strings.Split(strings.TrimRight(res.Success.Message, "\n"), "\n") {
+		fmt.Println("  " + line)
 	}
 }

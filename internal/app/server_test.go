@@ -96,6 +96,23 @@ func TestHandleStatusUsesProviderWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestHandleDebugReturnsRuntimeDump(t *testing.T) {
+	rt := NewRuntime(effects.NoopActions{})
+	t.Cleanup(rt.Close)
+	srv := NewServer(rt, effects.NoopActions{}, nil)
+
+	res := srv.handleRequest(protocol.Request{Command: "debug"})
+	if res.Success == nil {
+		t.Fatalf("response = %#v, want success", res)
+	}
+	if !strings.Contains(res.Success.Message, "phase: idle") {
+		t.Fatalf("debug = %q, want phase field", res.Success.Message)
+	}
+	if !strings.Contains(res.Success.Message, "config.alert.repeat_count:") {
+		t.Fatalf("debug = %q, want config snapshot", res.Success.Message)
+	}
+}
+
 func TestHistoryResponseShowsTodayTasks(t *testing.T) {
 	cfg := storage.DefaultRuntimeConfig()
 	cfg.TaskShort = 20 * 1e6

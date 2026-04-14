@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,10 +23,12 @@ type File struct {
 }
 
 type taskJSON struct {
-	Short  string `json:"short"`
-	Medium string `json:"medium"`
-	Long   string `json:"long"`
-	Deep   string `json:"deep"`
+	Short         string `json:"short"`
+	Medium        string `json:"medium"`
+	Long          string `json:"long"`
+	Deep          string `json:"deep"`
+	LongEndAction string `json:"long_end_action"`
+	DeepEndAction string `json:"deep_end_action"`
 }
 
 type cooldownJSON struct {
@@ -48,14 +51,16 @@ type idleJSON struct {
 }
 
 type alertJSON struct {
-	RepeatInterval string `json:"repeat_interval"`
+	RepeatCount *int `json:"repeat_count"`
 }
 
 type Overrides struct {
-	TaskShort  *time.Duration
-	TaskMedium *time.Duration
-	TaskLong   *time.Duration
-	TaskDeep   *time.Duration
+	TaskShort         *time.Duration
+	TaskMedium        *time.Duration
+	TaskLong          *time.Duration
+	TaskDeep          *time.Duration
+	TaskLongEndAction *string
+	TaskDeepEndAction *string
 
 	CooldownShort *time.Duration
 	CooldownLong  *time.Duration
@@ -71,14 +76,16 @@ type Overrides struct {
 	IdleWarnAfter      *time.Duration
 	IdleLockAfter      *time.Duration
 
-	CompletionAlertRepeatInterval *time.Duration
+	CompletionAlertRepeatCount *int
 }
 
 type RuntimeConfig struct {
-	TaskShort  time.Duration
-	TaskMedium time.Duration
-	TaskLong   time.Duration
-	TaskDeep   time.Duration
+	TaskShort         time.Duration
+	TaskMedium        time.Duration
+	TaskLong          time.Duration
+	TaskDeep          time.Duration
+	TaskLongEndAction string
+	TaskDeepEndAction string
 
 	CooldownShort time.Duration
 	CooldownLong  time.Duration
@@ -92,9 +99,9 @@ type RuntimeConfig struct {
 	RelockDelay        time.Duration
 	CooldownStartDelay time.Duration
 
-	IdleWarnAfter                 time.Duration
-	IdleLockAfter                 time.Duration
-	CompletionAlertRepeatInterval time.Duration
+	IdleWarnAfter              time.Duration
+	IdleLockAfter              time.Duration
+	CompletionAlertRepeatCount int
 }
 
 const (
@@ -102,6 +109,9 @@ const (
 	TaskMediumDuration = 30 * time.Minute
 	TaskLongDuration   = 60 * time.Minute
 	TaskDeepDuration   = 90 * time.Minute
+
+	TaskEndActionSleep = "sleep"
+	TaskEndActionLock  = "lock"
 
 	CooldownShortDuration = 5 * time.Minute
 	CooldownLongDuration  = 10 * time.Minute
@@ -126,10 +136,12 @@ var (
 
 func DefaultRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
-		TaskShort:  TaskShortDuration,
-		TaskMedium: TaskMediumDuration,
-		TaskLong:   TaskLongDuration,
-		TaskDeep:   TaskDeepDuration,
+		TaskShort:         TaskShortDuration,
+		TaskMedium:        TaskMediumDuration,
+		TaskLong:          TaskLongDuration,
+		TaskDeep:          TaskDeepDuration,
+		TaskLongEndAction: TaskEndActionLock,
+		TaskDeepEndAction: TaskEndActionSleep,
 
 		CooldownShort: CooldownShortDuration,
 		CooldownLong:  CooldownLongDuration,
@@ -143,9 +155,9 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		RelockDelay:        RelockDelay,
 		CooldownStartDelay: CooldownStartDelay,
 
-		IdleWarnAfter:                 IdleWarningAfter,
-		IdleLockAfter:                 IdleLockAfter,
-		CompletionAlertRepeatInterval: 5 * time.Second,
+		IdleWarnAfter:              IdleWarningAfter,
+		IdleLockAfter:              IdleLockAfter,
+		CompletionAlertRepeatCount: 3,
 	}
 }
 
@@ -185,15 +197,23 @@ func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 		{"cooldown_start_delay", cfg.CooldownStartDelay},
 		{"idle.warn_after", cfg.IdleWarnAfter},
 		{"idle.lock_after", cfg.IdleLockAfter},
-		{"alert.repeat_interval", cfg.CompletionAlertRepeatInterval},
 	}
 	for _, item := range positive {
 		if item.value <= 0 {
 			return fmt.Errorf("%s must be > 0", item.name)
 		}
 	}
+	if cfg.CompletionAlertRepeatCount < 0 {
+		return fmt.Errorf("alert.repeat_count must be >= 0")
+	}
 	if cfg.RelockDelay < 0 {
 		return fmt.Errorf("relock_delay must be >= 0")
+	}
+	if !isValidTaskEndAction(cfg.TaskLongEndAction) {
+		return fmt.Errorf("task.long_end_action must be one of %q or %q", TaskEndActionSleep, TaskEndActionLock)
+	}
+	if !isValidTaskEndAction(cfg.TaskDeepEndAction) {
+		return fmt.Errorf("task.deep_end_action must be one of %q or %q", TaskEndActionSleep, TaskEndActionLock)
 	}
 	if !(cfg.TaskShort < cfg.TaskMedium && cfg.TaskMedium < cfg.TaskLong && cfg.TaskLong < cfg.TaskDeep) {
 		return fmt.Errorf("task presets must be strictly increasing: short < medium < long < deep")
@@ -234,6 +254,8 @@ func SupportedConfigKeys() []string {
 		"task.medium",
 		"task.long",
 		"task.deep",
+		"task.long_end_action",
+		"task.deep_end_action",
 		"cooldown.short",
 		"cooldown.long",
 		"cooldown.deep",
@@ -246,7 +268,7 @@ func SupportedConfigKeys() []string {
 		"cooldown_start_delay",
 		"idle.warn_after",
 		"idle.lock_after",
-		"alert.repeat_interval",
+		"alert.repeat_count",
 	}
 }
 
@@ -260,6 +282,10 @@ func DescribeConfigKey(cfg RuntimeConfig, key string) (string, error) {
 		return cfg.TaskLong.String(), nil
 	case "task.deep":
 		return cfg.TaskDeep.String(), nil
+	case "task.long_end_action":
+		return cfg.TaskLongEndAction, nil
+	case "task.deep_end_action":
+		return cfg.TaskDeepEndAction, nil
 	case "cooldown.short":
 		return cfg.CooldownShort.String(), nil
 	case "cooldown.long":
@@ -284,8 +310,8 @@ func DescribeConfigKey(cfg RuntimeConfig, key string) (string, error) {
 		return cfg.IdleWarnAfter.String(), nil
 	case "idle.lock_after":
 		return cfg.IdleLockAfter.String(), nil
-	case "alert.repeat_interval":
-		return cfg.CompletionAlertRepeatInterval.String(), nil
+	case "alert.repeat_count":
+		return strconv.Itoa(cfg.CompletionAlertRepeatCount), nil
 	default:
 		return "", fmt.Errorf("unknown config key %q", key)
 	}
@@ -340,6 +366,9 @@ func Load(path string) (File, bool, error) {
 	if err := rejectLegacyBreakRelockDelay(data); err != nil {
 		return File{}, true, err
 	}
+	if err := rejectLegacyAlertRepeatInterval(data); err != nil {
+		return File{}, true, err
+	}
 	var cfg File
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return File{}, true, fmt.Errorf("parse config JSON: %w", err)
@@ -356,6 +385,9 @@ func loadConfigMap(path string) (map[string]any, bool, error) {
 		return nil, false, fmt.Errorf("read config: %w", err)
 	}
 	if err := rejectLegacyBreakRelockDelay(data); err != nil {
+		return nil, true, err
+	}
+	if err := rejectLegacyAlertRepeatInterval(data); err != nil {
 		return nil, true, err
 	}
 	var raw map[string]any
@@ -397,6 +429,12 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	if err := applyDuration(&resolved.TaskDeep, fileCfg.Task.Deep); err != nil {
 		return RuntimeConfig{}, fmt.Errorf("invalid task.deep: %w", err)
 	}
+	if err := applyTaskEndAction(&resolved.TaskLongEndAction, fileCfg.Task.LongEndAction); err != nil {
+		return RuntimeConfig{}, fmt.Errorf("invalid task.long_end_action: %w", err)
+	}
+	if err := applyTaskEndAction(&resolved.TaskDeepEndAction, fileCfg.Task.DeepEndAction); err != nil {
+		return RuntimeConfig{}, fmt.Errorf("invalid task.deep_end_action: %w", err)
+	}
 	if err := applyDuration(&resolved.CooldownShort, fileCfg.Cooldown.Short); err != nil {
 		return RuntimeConfig{}, fmt.Errorf("invalid cooldown.short: %w", err)
 	}
@@ -433,13 +471,15 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	if err := applyDuration(&resolved.IdleLockAfter, fileCfg.Idle.LockAfter); err != nil {
 		return RuntimeConfig{}, fmt.Errorf("invalid idle.lock_after: %w", err)
 	}
-	if err := applyDuration(&resolved.CompletionAlertRepeatInterval, fileCfg.Alert.RepeatInterval); err != nil {
-		return RuntimeConfig{}, fmt.Errorf("invalid alert.repeat_interval: %w", err)
+	if fileCfg.Alert.RepeatCount != nil {
+		resolved.CompletionAlertRepeatCount = *fileCfg.Alert.RepeatCount
 	}
 	applyOverride(&resolved.TaskShort, overrides.TaskShort)
 	applyOverride(&resolved.TaskMedium, overrides.TaskMedium)
 	applyOverride(&resolved.TaskLong, overrides.TaskLong)
 	applyOverride(&resolved.TaskDeep, overrides.TaskDeep)
+	applyOverrideString(&resolved.TaskLongEndAction, overrides.TaskLongEndAction)
+	applyOverrideString(&resolved.TaskDeepEndAction, overrides.TaskDeepEndAction)
 	applyOverride(&resolved.CooldownShort, overrides.CooldownShort)
 	applyOverride(&resolved.CooldownLong, overrides.CooldownLong)
 	applyOverride(&resolved.CooldownDeep, overrides.CooldownDeep)
@@ -452,7 +492,7 @@ func ResolveRuntimeConfig(defaults RuntimeConfig, fileCfg File, overrides Overri
 	applyOverride(&resolved.CooldownStartDelay, overrides.CooldownStartDelay)
 	applyOverride(&resolved.IdleWarnAfter, overrides.IdleWarnAfter)
 	applyOverride(&resolved.IdleLockAfter, overrides.IdleLockAfter)
-	applyOverride(&resolved.CompletionAlertRepeatInterval, overrides.CompletionAlertRepeatInterval)
+	applyOverrideInt(&resolved.CompletionAlertRepeatCount, overrides.CompletionAlertRepeatCount)
 	return resolved, nil
 }
 
@@ -471,6 +511,39 @@ func applyDuration(dst *time.Duration, raw string) error {
 func applyOverride(dst *time.Duration, value *time.Duration) {
 	if value != nil {
 		*dst = *value
+	}
+}
+
+func applyOverrideInt(dst *int, value *int) {
+	if value != nil {
+		*dst = *value
+	}
+}
+
+func applyOverrideString(dst *string, value *string) {
+	if value != nil {
+		*dst = strings.ToLower(strings.TrimSpace(*value))
+	}
+}
+
+func applyTaskEndAction(dst *string, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if !isValidTaskEndAction(normalized) {
+		return fmt.Errorf("must be one of %q or %q", TaskEndActionSleep, TaskEndActionLock)
+	}
+	*dst = normalized
+	return nil
+}
+
+func isValidTaskEndAction(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case TaskEndActionSleep, TaskEndActionLock:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -495,8 +568,24 @@ func applyConfigValue(raw map[string]any, key, rawValue string) error {
 	switch section {
 	case "task", "cooldown", "break", "idle", "alert":
 		switch leaf {
-		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after", "repeat_interval":
+		case "short", "medium", "long", "deep", "long_start", "deep_start", "warning", "long_duration", "deep_duration", "warn_after", "lock_after":
 			sectionMap[leaf] = rawValue
+			return nil
+		case "long_end_action", "deep_end_action":
+			if !isValidTaskEndAction(rawValue) {
+				return fmt.Errorf("task.%s must be one of %q or %q", leaf, TaskEndActionSleep, TaskEndActionLock)
+			}
+			sectionMap[leaf] = strings.ToLower(strings.TrimSpace(rawValue))
+			return nil
+		case "repeat_count":
+			value, err := strconv.Atoi(rawValue)
+			if err != nil {
+				return fmt.Errorf("invalid config value %q for %s: %w", rawValue, key, err)
+			}
+			if value < 0 {
+				return fmt.Errorf("alert.repeat_count must be >= 0")
+			}
+			sectionMap[leaf] = value
 			return nil
 		default:
 			return fmt.Errorf("unknown config key %q", key)
@@ -553,6 +642,25 @@ func rejectLegacyBreakRelockDelay(data []byte) error {
 	}
 	if _, ok := breakFields["relock_delay"]; ok {
 		return fmt.Errorf("legacy break.relock_delay is not supported; use top-level relock_delay")
+	}
+	return nil
+}
+
+func rejectLegacyAlertRepeatInterval(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	alertRaw, ok := raw["alert"]
+	if !ok {
+		return nil
+	}
+	var alertFields map[string]json.RawMessage
+	if err := json.Unmarshal(alertRaw, &alertFields); err != nil {
+		return nil
+	}
+	if _, ok := alertFields["repeat_interval"]; ok {
+		return fmt.Errorf("legacy alert.repeat_interval is not supported; use alert.repeat_count")
 	}
 	return nil
 }

@@ -99,6 +99,35 @@ func TestRunConfigReadsValueAndDefault(t *testing.T) {
 	}
 }
 
+func TestRunConfigReadsTaskEndActions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	body := `{"task":{"long_end_action":"sleep","deep_end_action":"lock"}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	t.Setenv("FOCUS_CONFIG", path)
+
+	var stdout strings.Builder
+	withStdout(&stdout, func() {
+		if err := runConfig([]string{"task.long_end_action"}, nil); err != nil {
+			t.Fatalf("runConfig returned error: %v", err)
+		}
+		if err := runConfig([]string{"task.deep_end_action"}, nil); err != nil {
+			t.Fatalf("runConfig returned error: %v", err)
+		}
+	})
+
+	got := stdout.String()
+	if !strings.Contains(got, "task.long_end_action = sleep (default: lock)") {
+		t.Fatalf("read output = %q, want task.long_end_action current and default values", got)
+	}
+	if !strings.Contains(got, "task.deep_end_action = lock (default: sleep)") {
+		t.Fatalf("read output = %q, want task.deep_end_action current and default values", got)
+	}
+}
+
 func TestRunConfigHelpPrintsUsage(t *testing.T) {
 	var stdout strings.Builder
 	withStdout(&stdout, func() {
@@ -111,6 +140,8 @@ func TestRunConfigHelpPrintsUsage(t *testing.T) {
 	for _, want := range []string{
 		"focus config <key> [<value>]",
 		"task.short (default: 15m0s)",
+		"task.long_end_action (default: lock)",
+		"task.deep_end_action (default: sleep)",
 		"relock_delay (default: 5s)",
 		"cooldown_start_delay (default: 2m0s)",
 		"focus config idle.lock_after 3m",

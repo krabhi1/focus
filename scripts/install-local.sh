@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"
 BINDIR="$PREFIX/bin"
+LIBEXECDIR="$PREFIX/libexec/focus"
 SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"
 
 NO_BUILD=0
@@ -15,7 +16,7 @@ usage() {
 Usage: scripts/install-local.sh [options]
 
 Options:
-  --prefix <path>      Install binaries under <path>/bin (default: ~/.local)
+  --prefix <path>      Install binaries under <path> (default: ~/.local)
   --no-build           Skip 'make build'
   --no-systemd         Do not install/enable user systemd service
   -h, --help           Show this help
@@ -56,12 +57,16 @@ fi
 
 mkdir -p "$BINDIR"
 install -m 0755 "$ROOT_DIR/dist/focus" "$BINDIR/focus"
-install -m 0755 "$ROOT_DIR/dist/focusd" "$BINDIR/focusd"
-install -m 0755 "$ROOT_DIR/dist/focus-events" "$BINDIR/focus-events"
+rm -f "$BINDIR/focusd" "$BINDIR/focus-events"
+mkdir -p "$LIBEXECDIR"
+install -m 0755 "$ROOT_DIR/dist/focusd" "$LIBEXECDIR/focusd"
+install -m 0755 "$ROOT_DIR/dist/focus-events" "$LIBEXECDIR/focus-events"
 mkdir -p "$PREFIX/share/focus/assets"
 cp -r "$ROOT_DIR/assets/." "$PREFIX/share/focus/assets/"
 
 echo "Installed binaries to $BINDIR"
+echo "Installed private runtime files to $LIBEXECDIR"
+echo "Installed assets to $PREFIX/share/focus/assets"
 
 if [[ "$NO_SYSTEMD" -eq 1 ]]; then
   echo "Skipping systemd user service setup (--no-systemd)"
@@ -76,7 +81,7 @@ fi
 mkdir -p "$SYSTEMD_USER_DIR"
 SERVICE_TEMPLATE="$ROOT_DIR/packaging/systemd/focusd.service"
 SERVICE_TARGET="$SYSTEMD_USER_DIR/focusd.service"
-sed "s|@BINDIR@|$BINDIR|g" "$SERVICE_TEMPLATE" > "$SERVICE_TARGET"
+sed "s|@LIBEXECDIR@|$LIBEXECDIR|g" "$SERVICE_TEMPLATE" > "$SERVICE_TARGET"
 
 echo "Installed systemd user unit to $SERVICE_TARGET"
 

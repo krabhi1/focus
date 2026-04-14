@@ -63,6 +63,12 @@ func (RealActions) UnlockScreen() {
 	tryCommands(unlockBackends())
 }
 
+func (RealActions) Sleep() {
+	if !tryCommands(sleepBackends()) {
+		RealActions{}.LockScreen()
+	}
+}
+
 func DetectDesktopFlavor() string {
 	env := strings.ToLower(strings.TrimSpace(os.Getenv("XDG_CURRENT_DESKTOP") + " " + os.Getenv("DESKTOP_SESSION")))
 	switch {
@@ -97,6 +103,15 @@ func DetectUnlockBackend() string {
 
 func DetectSoundBackend() string {
 	for _, spec := range soundBackends("") {
+		if _, err := commandLookPath(spec.name); err == nil {
+			return spec.name
+		}
+	}
+	return "missing"
+}
+
+func DetectSleepBackend() string {
+	for _, spec := range sleepBackends() {
 		if _, err := commandLookPath(spec.name); err == nil {
 			return spec.name
 		}
@@ -141,7 +156,17 @@ func unlockBackends() []commandSpec {
 	return specs
 }
 
-func tryCommands(specs []commandSpec) {
+func sleepBackends() []commandSpec {
+	var specs []commandSpec
+	sessionID := sessionIDValue()
+	if sessionID != "" {
+		specs = append(specs, commandSpec{name: "loginctl", args: []string{"suspend-session", sessionID}})
+	}
+	specs = append(specs, commandSpec{name: "systemctl", args: []string{"suspend"}})
+	return specs
+}
+
+func tryCommands(specs []commandSpec) bool {
 	for _, spec := range specs {
 		if spec.name == "" {
 			continue
@@ -150,9 +175,10 @@ func tryCommands(specs []commandSpec) {
 			continue
 		}
 		if err := commandRun(spec.name, spec.args...); err == nil {
-			return
+			return true
 		}
 	}
+	return false
 }
 
 func (RealActions) PlaySound(path string) {
@@ -178,5 +204,6 @@ func soundBackends(path string) []commandSpec {
 
 func (NoopActions) LockScreen()           {}
 func (NoopActions) UnlockScreen()         {}
+func (NoopActions) Sleep()                {}
 func (NoopActions) PlaySound(string)      {}
 func (NoopActions) Notify(string, string) {}

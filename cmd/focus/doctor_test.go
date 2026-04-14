@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -87,6 +89,55 @@ func TestDetectSoundBackendFallsBackToMpv(t *testing.T) {
 
 	if got := detectSoundBackend(); got != "mpv" {
 		t.Fatalf("detectSoundBackend() = %q, want mpv", got)
+	}
+}
+
+func TestDetectSleepBackendPrefersLoginctlWithSession(t *testing.T) {
+	dir := t.TempDir()
+	fakeExecutable(t, dir, "loginctl")
+	fakeExecutable(t, dir, "systemctl")
+
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_SESSION_ID", "session-123")
+
+	if got := detectSleepBackend(); got != "loginctl" {
+		t.Fatalf("detectSleepBackend() = %q, want loginctl", got)
+	}
+}
+
+func TestDetectSleepBackendFallsBackToSystemctl(t *testing.T) {
+	dir := t.TempDir()
+	fakeExecutable(t, dir, "systemctl")
+
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_SESSION_ID", "")
+
+	if got := detectSleepBackend(); got != "systemctl" {
+		t.Fatalf("detectSleepBackend() = %q, want systemctl", got)
+	}
+}
+
+func TestPrintInstalledCommandCheckUsesLibexecPath(t *testing.T) {
+	prefix := t.TempDir()
+	libexecDir := filepath.Join(prefix, "libexec", "focus")
+	if err := os.MkdirAll(libexecDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeExecutable(t, libexecDir, "focusd")
+
+	t.Setenv("FOCUS_LIBEXEC_DIR", libexecDir)
+
+	var stdout bytes.Buffer
+	withStdout(&stdout, func() {
+		printInstalledCommandCheck("focusd", true)
+	})
+
+	got := stdout.String()
+	if !strings.Contains(got, "dep.focusd:") {
+		t.Fatalf("output = %q, want focusd check", got)
+	}
+	if !strings.Contains(got, libexecDir) {
+		t.Fatalf("output = %q, want libexec path", got)
 	}
 }
 

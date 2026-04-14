@@ -10,7 +10,7 @@ Focus has two user-facing binaries:
 - `focusd`: the background daemon
 - `focus`: the CLI client
 
-The daemon owns runtime flow, deadline scheduling, screen lock actions, notifications, and the `focus-events` helper.
+The daemon owns runtime flow, deadline scheduling, screen lock actions, notifications, and the private `focus-events` helper.
 The client sends commands to the daemon over the Unix socket.
 
 Current architecture:
@@ -48,7 +48,9 @@ Example:
     "short": "15m",
     "medium": "30m",
     "long": "60m",
-    "deep": "90m"
+    "deep": "90m",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5m",
@@ -69,7 +71,7 @@ Example:
     "lock_after": "2m"
   },
   "alert": {
-    "repeat_interval": "5s"
+    "repeat_count": 3
   }
 }
 ```
@@ -82,6 +84,8 @@ Task preset durations used by `focus start --duration ...`.
 - `task.medium`: duration for `medium`
 - `task.long`: duration for `long`
 - `task.deep`: duration for `deep`
+- `task.long_end_action`: what `long` tasks do at cooldown start; default `lock`
+- `task.deep_end_action`: what `deep` tasks do at cooldown start; default `sleep`
 
 These must be strictly increasing:
 
@@ -145,7 +149,7 @@ These values control the wall-clock no-task timer. They are not tied to helper i
 
 Completion alert settings.
 
-- `alert.repeat_interval`: how often the completion sound repeats while the screen is locked after task completion
+- `alert.repeat_count`: how many times the completion sound plays after task completion; `0` disables sound, `1` plays once, higher values repeat every 3 seconds while the screen stays locked
 
 Sound playback is best-effort. Focus tries common headless audio tools and skips sound if none are installed.
 
@@ -157,9 +161,10 @@ Examples:
 
 - missing or non-positive durations are rejected
 - task presets must be strictly increasing
+- `task.long_end_action` and `task.deep_end_action` must be `sleep` or `lock`
 - break timings must fit inside the task duration
 - idle warn must be less than idle lock
-- alert repeat interval must be positive
+- alert repeat count must be non-negative
 
 If config validation fails, the daemon exits before serving requests.
 
@@ -188,6 +193,8 @@ Common flags:
 - `--task-medium <duration>`: override `task.medium`
 - `--task-long <duration>`: override `task.long`
 - `--task-deep <duration>`: override `task.deep`
+- `--task-long-end-action <sleep|lock>`: override `task.long_end_action`
+- `--task-deep-end-action <sleep|lock>`: override `task.deep_end_action`
 - `--cooldown-short <duration>`: override `cooldown.short`
 - `--cooldown-long <duration>`: override `cooldown.long`
 - `--cooldown-deep <duration>`: override `cooldown.deep`
@@ -200,7 +207,7 @@ Common flags:
 - `--cooldown-start-delay <duration>`: override `cooldown_start_delay`
 - `--idle-warn-after <duration>`: override `idle.warn_after`
 - `--idle-lock-after <duration>`: override `idle.lock_after`
-- `--completion-alert-repeat-interval <duration>`: override `alert.repeat_interval`
+- `--completion-alert-repeat-count <count>`: override `alert.repeat_count`
 
 Precedence:
 
@@ -297,10 +304,14 @@ Example:
 ```bash
 focus config idle.lock_after
 focus config idle.lock_after 3m
+focus config task.long_end_action
+focus config task.deep_end_action
+focus config task.long_end_action lock
+focus config task.deep_end_action sleep
 ```
 
 Use one argument to read the current value and default. Use two arguments to update the value and reload the daemon.
-The key uses dot notation for nested fields. Supported values are duration strings.
+The key uses dot notation for nested fields. Duration settings use duration strings, and the task end-action fields accept `sleep` or `lock`.
 
 ### `focus doctor`
 
@@ -350,7 +361,7 @@ Flags:
 
 ### `focus uninstall`
 
-Removes the installed binaries and service.
+Removes the installed binaries and service after three `y/N` confirmation prompts.
 
 Examples:
 
@@ -425,7 +436,9 @@ Typical values are long enough to match real work sessions:
     "short": "15m",
     "medium": "30m",
     "long": "60m",
-    "deep": "90m"
+    "deep": "90m",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5m",
@@ -446,7 +459,7 @@ Typical values are long enough to match real work sessions:
     "lock_after": "2m"
   },
   "alert": {
-    "repeat_interval": "5s"
+    "repeat_count": 3
   }
 }
 ```
@@ -461,7 +474,9 @@ Use a local `focus.dev.json` when you want to test the full flow quickly:
     "short": "5s",
     "medium": "10s",
     "long": "20s",
-    "deep": "30s"
+    "deep": "30s",
+    "long_end_action": "lock",
+    "deep_end_action": "sleep"
   },
   "cooldown": {
     "short": "5s",
@@ -482,7 +497,7 @@ Use a local `focus.dev.json` when you want to test the full flow quickly:
     "lock_after": "10s"
   },
   "alert": {
-    "repeat_interval": "1s"
+    "repeat_count": 3
   }
 }
 ```
@@ -532,7 +547,7 @@ Check the config file and look for errors like:
 
 ### Missing helper binary
 
-If daemon events do not appear, verify `focus-events` is installed and on `PATH`:
+If daemon events do not appear, verify `focus-events` is installed alongside the daemon in `~/.local/libexec/focus` (or your chosen prefix):
 
 ```bash
 focus doctor
